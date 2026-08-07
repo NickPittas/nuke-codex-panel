@@ -7,9 +7,16 @@ import traceback
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ..app_server import CodexAppServerClient
+from ..app_server import (
+    BACKEND_DISPLAY,
+    BackendClient,
+    create_backend,
+    detected_backends,
+    implemented_backends,
+)
 from ..bridge import NukeBridgeServer
 from ..capture import capture_backend, capture_target
+from .chat_view import ChatView
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -24,18 +31,16 @@ class CodexPanelWidget(QtWidgets.QWidget):
         self.setMinimumWidth(360)
         self.pending_images = []
         self._assistant_stream_open = False
-        self._assistant_item_id = None
-        self._assistant_item_seen = False
         self._build_ui()
         self.bridge = NukeBridgeServer(self._approve_python, self)
         self.bridge.status_changed.connect(self.status.setText)
         bridge_ready = self.bridge.start()
-        self.client = CodexAppServerClient(
-            str(PROJECT_ROOT),
-            self,
-            bridge_path=str(self.bridge.discovery_path) if bridge_ready else None,
-        )
+        self._backend_key = "codex"
+        self.reconnect_button.clicked.connect(lambda _checked=False: self.client.restart())
+        self.client = self._build_client(self._backend_key, bridge_ready)
         self._connect_client()
+        self._populate_backend_selector()
+        self._refresh_backend_labels()
         QtCore.QTimer.singleShot(0, self.client.start)
 
     def _build_ui(self):
@@ -43,17 +48,45 @@ class CodexPanelWidget(QtWidgets.QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
 
         heading_row = QtWidgets.QHBoxLayout()
-        heading = QtWidgets.QLabel("Codex for Nuke")
-        font = heading.font()
+        self.heading = QtWidgets.QLabel("Codex for Nuke")
+        font = self.heading.font()
         font.setBold(True)
         font.setPointSize(font.pointSize() + 2)
-        heading.setFont(font)
-        heading_row.addWidget(heading)
+        self.heading.setFont(font)
+        heading_row.addWidget(self.heading)
         heading_row.addStretch(1)
+        self.backend_selector = QtWidgets.QComboBox()
+        self.backend_selector.setToolTip("Coding-agent backend")
+        heading_row.addWidget(self.backend_selector)
+        self.new_conversation_button = QtWidgets.QToolButton()
+        self.new_conversation_button.setText("New Conversation")
+        self.new_conversation_button.setToolTip("Clear the chat and start a new conversation")
+        heading_row.addWidget(self.new_conversation_button)
         self.reconnect_button = QtWidgets.QToolButton()
         self.reconnect_button.setText("Reconnect")
         heading_row.addWidget(self.reconnect_button)
         layout.addLayout(heading_row)
+
+        model_row = QtWidgets.QHBoxLayout()
+        self.model_combo = QtWidgets.QComboBox()
+        self.model_combo.setToolTip("Model")
+        self.model_combo.setPlaceholderText("Model")
+        self.model_combo.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Fixed,
+        )
+        model_row.addWidget(self.model_combo, 2)
+        self.thinking_combo = QtWidgets.QComboBox()
+        self.thinking_combo.setToolTip("Thinking")
+        self.thinking_combo.setPlaceholderText("Thinking")
+        model_row.addWidget(self.thinking_combo, 1)
+        layout.addLayout(model_row)
+        self._models = []
+        self._settings = QtCore.QSettings("nuke-codex-panel")
+        self.model_combo.setVisible(False)
+        self.thinking_combo.setVisible(False)
+        self.model_combo.currentIndexChanged.connect(self._on_model_selected)
+        self.thinking_combo.currentIndexChanged.connect(self._on_thinking_selected)
 
         self.status = QtWidgets.QLabel("Preparing Codex…")
         self.status.setWordWrap(True)
@@ -88,10 +121,7 @@ class CodexPanelWidget(QtWidgets.QWidget):
         layout.addLayout(attachment_row)
 
         splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
-        self.chat = QtWidgets.QTextEdit()
-        self.chat.setReadOnly(True)
-        self.chat.setAcceptRichText(False)
-        self.chat.setPlaceholderText("Codex messages will appear here.")
+        self.chat = ChatView()
         splitter.addWidget(self.chat)
 
         self.history = QtWidgets.QListWidget()
@@ -119,13 +149,13 @@ class CodexPanelWidget(QtWidgets.QWidget):
 
         self.send_button.clicked.connect(self.send_prompt)
         self.cancel_button.clicked.connect(lambda: self.client.interrupt())
+        self.new_conversation_button.clicked.connect(self._on_new_conversation)
         self.clear_attachments_button.clicked.connect(self.clear_pending_attachments)
         QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Return"), self).activated.connect(
             self.send_prompt
         )
 
     def _connect_client(self):
-        self.reconnect_button.clicked.connect(self.client.restart)
         self.client.status_changed.connect(self.status.setText)
         self.client.ready_changed.connect(self._on_ready)
         self.client.user_message.connect(self._show_user_message)
@@ -134,11 +164,185 @@ class CodexPanelWidget(QtWidgets.QWidget):
         self.client.message_delta.connect(self._append_assistant_delta)
         self.client.turn_completed.connect(self._finish_assistant_message)
         self.client.error.connect(self._show_error)
+        self.client.models_changed.connect(self._on_models_changed)
+        self.client.thinking_updated.connect(self.chat.update_thinking)
+        self.client.thinking_completed.connect(self.chat.complete_thinking)
+        self.client.tool_updated.connect(self.chat.update_tool)
+
+    def _disconnect_client(self):
+        for sig in (
+            self.client.status_changed,
+            self.client.ready_changed,
+            self.client.user_message,
+            self.client.turn_started,
+            self.client.agent_message_started,
+            self.client.message_delta,
+            self.client.turn_completed,
+            self.client.error,
+            self.client.models_changed,
+            self.client.thinking_updated,
+            self.client.thinking_completed,
+            self.client.tool_updated,
+        ):
+            try:
+                sig.disconnect()
+            except RuntimeError:
+                pass
+
+    def _build_client(self, key: str, bridge_ready: bool) -> BackendClient:
+        bridge_path = str(self.bridge.discovery_path) if bridge_ready else None
+        client = create_backend(key, str(PROJECT_ROOT), self, bridge_path=bridge_path)
+        assert client is not None, "default backend %s is not implemented" % key
+        return client
+
+    def switch_backend(self, key: str):
+        """Switch to a different coding-agent backend; no-op if not implemented."""
+        if key == self._backend_key:
+            return
+        new_client = create_backend(
+            key, str(PROJECT_ROOT), self, bridge_path=self.client.bridge_path
+        )
+        if new_client is None:
+            self.status.setText("%s adapter is not available yet" % key.title())
+            return
+        old = self.client
+        self._disconnect_client()
+        old.stop()
+        old.deleteLater()
+        self.client = new_client
+        self._backend_key = key
+        self._connect_client()
+        self.status.setText("Switching to %s…" % new_client.display_name)
+        self.client.start()
+        self._refresh_backend_labels()
+        self._hide_model_selectors()
+
+    def _hide_model_selectors(self):
+        self._models = []
+        self.model_combo.setVisible(False)
+        self.thinking_combo.setVisible(False)
+
+    def _populate_backend_selector(self):
+        self.backend_selector.blockSignals(True)
+        self.backend_selector.clear()
+        detected = detected_backends()
+        keys = list(detected.keys()) if detected else [self._backend_key]
+        for key in keys:
+            label = BACKEND_DISPLAY.get(key, key.title())
+            if key not in implemented_backends():
+                label += " (soon)"
+            self.backend_selector.addItem(label, key)
+        idx = self.backend_selector.findData(self._backend_key)
+        if idx >= 0:
+            self.backend_selector.setCurrentIndex(idx)
+        self.backend_selector.blockSignals(False)
+        self.backend_selector.currentIndexChanged.connect(self._on_backend_selected)
+
+    @QtCore.Slot(int)
+    def _on_backend_selected(self, index: int):
+        key = self.backend_selector.itemData(index)
+        if key is None or key == self._backend_key:
+            return
+        self.switch_backend(key)
+        # switch_backend declines unimplemented backends; snap selector back.
+        if self.backend_selector.currentData() != self._backend_key:
+            idx = self.backend_selector.findData(self._backend_key)
+            if idx >= 0:
+                self.backend_selector.blockSignals(True)
+                self.backend_selector.setCurrentIndex(idx)
+                self.backend_selector.blockSignals(False)
+
+    def _refresh_backend_labels(self):
+        display = self.client.display_name
+        self.heading.setText("%s for Nuke" % display)
+        self.prompt.setPlaceholderText("Ask %s about the current comp…" % display)
+        self._update_capture_status()
 
     @QtCore.Slot(bool)
     def _on_ready(self, ready: bool):
         self.send_button.setEnabled(ready)
         self.send_button.setText("Send" if ready else "Connecting…")
+        if ready and self.client.supports_model_select:
+            self.client.request_models()
+        elif not self.client.supports_model_select:
+            self._hide_model_selectors()
+
+    def _settings_key(self, name: str) -> str:
+        return "%s/%s" % (self._backend_key, name)
+
+    def _selected_model(self):
+        model_id = self.model_combo.currentData()
+        for model in self._models:
+            if model.get("id") == model_id:
+                return model
+        return None
+
+    @QtCore.Slot(list)
+    def _on_models_changed(self, models: list):
+        if not self.client.supports_model_select or not models:
+            self._hide_model_selectors()
+            return
+        self._models = models
+        stored_id = self._settings.value(self._settings_key("model"))
+        stored_effort = self._settings.value(self._settings_key("effort"))
+        self.model_combo.blockSignals(True)
+        self.model_combo.clear()
+        self.model_combo.addItem("Default", None)
+        for model in models:
+            self.model_combo.addItem(model.get("name") or model.get("id"), model.get("id"))
+        idx = self.model_combo.findData(stored_id) if stored_id else -1
+        self.model_combo.setCurrentIndex(idx if idx > 0 else 0)
+        self.model_combo.blockSignals(False)
+        effort = self._populate_thinking(stored_effort)
+        self.model_combo.setVisible(True)
+        self.client.set_model(self.model_combo.currentData(), effort)
+
+    def _populate_thinking(self, preferred):
+        """Fill the thinking combo for the selected model; return chosen effort."""
+        model = self._selected_model()
+        efforts = (model or {}).get("efforts") or []
+        self.thinking_combo.blockSignals(True)
+        self.thinking_combo.clear()
+        choice = None
+        if efforts:
+            for effort in efforts:
+                self.thinking_combo.addItem(effort, effort)
+            default_effort = (model or {}).get("default_effort")
+            if preferred in efforts:
+                choice = preferred
+            elif default_effort in efforts:
+                choice = default_effort
+            else:
+                choice = efforts[0]
+            self.thinking_combo.setCurrentIndex(efforts.index(choice))
+        self.thinking_combo.blockSignals(False)
+        self.thinking_combo.setVisible(bool(efforts))
+        return choice
+
+    @QtCore.Slot(int)
+    def _on_model_selected(self, index: int):
+        model_id = self.model_combo.itemData(index)
+        if model_id is None:
+            self._settings.remove(self._settings_key("model"))
+        else:
+            self._settings.setValue(self._settings_key("model"), model_id)
+        effort = self._populate_thinking(
+            self._settings.value(self._settings_key("effort"))
+        )
+        if effort is None:
+            self._settings.remove(self._settings_key("effort"))
+        else:
+            self._settings.setValue(self._settings_key("effort"), effort)
+        self.client.set_model(model_id, effort)
+
+    @QtCore.Slot(int)
+    def _on_thinking_selected(self, index: int):
+        effort = self.thinking_combo.itemData(index)
+        if effort is None:
+            self._settings.remove(self._settings_key("effort"))
+        else:
+            self._settings.setValue(self._settings_key("effort"), effort)
+        self.client.set_model(self.model_combo.currentData(), effort)
 
     @QtCore.Slot()
     def send_prompt(self):
@@ -153,71 +357,43 @@ class CodexPanelWidget(QtWidgets.QWidget):
 
     @QtCore.Slot(str, list)
     def _show_user_message(self, text: str, images: list):
-        suffix = "\n[%s image(s) attached]" % len(images) if images else ""
-        self._append_block("You", text + suffix)
+        self.chat.add_user_message(text, images)
 
     @QtCore.Slot()
     def _start_assistant_message(self):
-        cursor = self.chat.textCursor()
-        cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
-        if not self.chat.document().isEmpty():
-            cursor.insertText("\n\n")
-        cursor.insertText("Codex:\n")
-        self.chat.setTextCursor(cursor)
         self._assistant_stream_open = True
-        self._assistant_item_id = None
-        self._assistant_item_seen = False
+        self.chat.end_turn()
 
     @QtCore.Slot(str, str)
     def _start_agent_message_item(self, item_id: str, _phase: str):
-        if not self._assistant_stream_open:
-            self._start_assistant_message()
-        if item_id and item_id == self._assistant_item_id:
-            return
-        cursor = self.chat.textCursor()
-        cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
-        if self._assistant_item_seen:
-            cursor.insertText("\n\n")
-        self.chat.setTextCursor(cursor)
-        self._assistant_item_id = item_id
-        self._assistant_item_seen = True
+        self.chat.start_agent_message(item_id or None)
 
     @QtCore.Slot(str)
     def _append_assistant_delta(self, delta: str):
-        if not self._assistant_stream_open:
-            self._start_assistant_message()
-        if not self._assistant_item_seen:
-            self._assistant_item_seen = True
-        cursor = self.chat.textCursor()
-        cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
-        cursor.insertText(delta)
-        self.chat.setTextCursor(cursor)
-        self.chat.ensureCursorVisible()
+        self.chat.append_agent_delta(delta)
 
     @QtCore.Slot(str)
     def _finish_assistant_message(self, status: str):
         self._assistant_stream_open = False
-        self._assistant_item_id = None
-        self._assistant_item_seen = False
+        self.chat.end_turn()
         self.cancel_button.setEnabled(False)
         self.send_button.setEnabled(self.client.ready)
-        self.status.setText("Codex connected — last turn %s" % status)
+        self.status.setText("%s connected — last turn %s" % (self.client.display_name, status))
 
     @QtCore.Slot(str)
     def _show_error(self, message: str):
-        self._append_block("Error", message)
+        self.chat.add_error(message)
         self.cancel_button.setEnabled(False)
         self.send_button.setEnabled(self.client.ready)
         self.send_button.setText("Send" if self.client.ready else "Connecting…")
 
-    def _append_block(self, role: str, text: str):
-        cursor = self.chat.textCursor()
-        cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
-        if not self.chat.document().isEmpty():
-            cursor.insertText("\n\n")
-        cursor.insertText("%s:\n%s" % (role, text))
-        self.chat.setTextCursor(cursor)
-        self.chat.ensureCursorVisible()
+    @QtCore.Slot()
+    def _on_new_conversation(self):
+        if self._assistant_stream_open:
+            return
+        self.client.new_conversation()
+        self.chat.clear()
+        self.chat.add_divider("New conversation")
 
     @QtCore.Slot(str)
     def capture(self, target: str):
@@ -295,11 +471,17 @@ class CodexPanelWidget(QtWidgets.QWidget):
 
     def _update_capture_status(self):
         count = len(self.pending_images)
-        self.capture_status.setText(
-            "%s pending image(s) — cleared automatically after Send" % count
-            if count
-            else "No pending images"
-        )
+        if count:
+            self.capture_status.setText(
+                "%s pending image(s) — cleared automatically after Send" % count
+            )
+        elif not self.client.supports_images:
+            self.capture_status.setText(
+                "%s has limited image support — screenshots become file references"
+                % self.client.display_name
+            )
+        else:
+            self.capture_status.setText("No pending images")
         self.clear_attachments_button.setEnabled(bool(count))
         self.history.setVisible(bool(count))
 
