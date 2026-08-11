@@ -44,7 +44,8 @@ class BackendClient(QtCore.QObject):
     turn_completed = QtCore.Signal(str)
     error = QtCore.Signal(str)
     # [{"id": str, "name": str, "efforts": [str], "default_effort": str|None,
-    #   "is_default": bool}] — efforts empty when the model has no thinking knob.
+    #   "is_default": bool, "provider": str, "provider_name": str}] — provider
+    # fields are optional; efforts is empty when the model has no thinking knob.
     models_changed = QtCore.Signal(list)
     # Thinking bubble: (item id, full text so far). Replace-based, not append —
     # adapters accumulate deltas and emit the whole text each time.

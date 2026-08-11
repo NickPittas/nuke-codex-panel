@@ -75,6 +75,14 @@ class CodexPanelWidget(QtWidgets.QWidget):
             QtWidgets.QSizePolicy.Policy.Expanding,
             QtWidgets.QSizePolicy.Policy.Fixed,
         )
+        self.model_tree = QtWidgets.QTreeView()
+        self.model_tree.setHeaderHidden(True)
+        self.model_tree.setRootIsDecorated(True)
+        self.model_tree.setItemsExpandable(True)
+        self.model_tree.setExpandsOnDoubleClick(False)
+        self.model_tree.setUniformRowHeights(True)
+        self.model_tree.setMinimumHeight(220)
+        self.model_combo.setView(self.model_tree)
         model_row.addWidget(self.model_combo, 2)
         self.thinking_combo = QtWidgets.QComboBox()
         self.thinking_combo.setToolTip("Thinking")
@@ -277,6 +285,23 @@ class CodexPanelWidget(QtWidgets.QWidget):
                 return model
         return None
 
+    def _find_model_index(self, model_id):
+        if not model_id:
+            return QtCore.QModelIndex()
+        model = self.model_combo.model()
+
+        def find(parent):
+            for row in range(model.rowCount(parent)):
+                index = model.index(row, 0, parent)
+                if model.data(index, QtCore.Qt.ItemDataRole.UserRole) == model_id:
+                    return index
+                nested = find(index)
+                if nested.isValid():
+                    return nested
+            return QtCore.QModelIndex()
+
+        return find(QtCore.QModelIndex())
+
     @QtCore.Slot(list)
     def _on_models_changed(self, models: list):
         if not self.client.supports_model_select or not models:
@@ -286,12 +311,58 @@ class CodexPanelWidget(QtWidgets.QWidget):
         stored_id = self._settings.value(self._settings_key("model"))
         stored_effort = self._settings.value(self._settings_key("effort"))
         self.model_combo.blockSignals(True)
-        self.model_combo.clear()
-        self.model_combo.addItem("Default", None)
-        for model in models:
-            self.model_combo.addItem(model.get("name") or model.get("id"), model.get("id"))
-        idx = self.model_combo.findData(stored_id) if stored_id else -1
-        self.model_combo.setCurrentIndex(idx if idx > 0 else 0)
+        model_store = QtGui.QStandardItemModel(self.model_combo)
+        default_item = QtGui.QStandardItem("Default")
+        default_item.setData(None, QtCore.Qt.ItemDataRole.UserRole)
+        model_store.appendRow(default_item)
+        provider_groups = []
+        grouped_models = {}
+        provider_labels = {}
+        for model_info in models:
+            group_key = (
+                model_info.get("provider")
+                or model_info.get("provider_name")
+                or ""
+            )
+            if group_key not in grouped_models:
+                grouped_models[group_key] = []
+                provider_groups.append(group_key)
+                provider_labels[group_key] = (
+                    model_info.get("provider_name") or model_info.get("provider")
+                )
+            grouped_models[group_key].append(model_info)
+
+        for provider in provider_groups:
+            provider_label = provider_labels[provider]
+            if provider_label:
+                provider_item = QtGui.QStandardItem(provider_label)
+                provider_item.setFlags(
+                    provider_item.flags() & ~QtCore.Qt.ItemFlag.ItemIsSelectable
+                )
+                font = provider_item.font()
+                font.setBold(True)
+                provider_item.setFont(font)
+                model_store.appendRow(provider_item)
+            else:
+                provider_item = model_store.invisibleRootItem()
+            for model_info in grouped_models[provider]:
+                model_item = QtGui.QStandardItem(
+                    model_info.get("name") or model_info.get("id")
+                )
+                model_item.setData(
+                    model_info.get("id"), QtCore.Qt.ItemDataRole.UserRole
+                )
+                provider_item.appendRow(model_item)
+        self.model_combo.setModel(model_store)
+        stored_index = self._find_model_index(stored_id)
+        if stored_index.isValid():
+            self.model_combo.setRootModelIndex(stored_index.parent())
+            self.model_combo.setCurrentIndex(stored_index.row())
+            self.model_combo.setRootModelIndex(QtCore.QModelIndex())
+            self.model_tree.expand(stored_index.parent())
+        else:
+            self.model_combo.setRootModelIndex(QtCore.QModelIndex())
+            self.model_combo.setCurrentIndex(0)
         self.model_combo.blockSignals(False)
         effort = self._populate_thinking(stored_effort)
         self.model_combo.setVisible(True)
@@ -321,7 +392,7 @@ class CodexPanelWidget(QtWidgets.QWidget):
 
     @QtCore.Slot(int)
     def _on_model_selected(self, index: int):
-        model_id = self.model_combo.itemData(index)
+        model_id = self.model_combo.currentData()
         if model_id is None:
             self._settings.remove(self._settings_key("model"))
         else:

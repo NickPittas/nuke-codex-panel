@@ -338,11 +338,14 @@ class OpencodeBackend(BackendClient):
                 provider_id = provider.get("id")
                 if provider_id not in connected:
                     continue
+                provider_name = provider.get("name") or provider_id
                 for model_id, model in (provider.get("models") or {}).items():
                     reasoning = (model.get("capabilities") or {}).get("reasoning")
                     models.append({
                         "id": "%s/%s" % (provider_id, model_id),
                         "name": model.get("name", model_id),
+                        "provider": provider_id,
+                        "provider_name": provider_name,
                         "efforts": sorted((model.get("variants") or {}).keys()) if reasoning else [],
                         "default_effort": None,
                         "is_default": defaults.get(provider_id) == model_id,
