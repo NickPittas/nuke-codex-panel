@@ -93,6 +93,16 @@ class CodexPanelWidget(QtWidgets.QWidget):
             QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
         self.model_combo.setMinimumContentsLength(12)
+        # Provider-grouped dropdown: bold, non-selectable provider rows with
+        # their models nested underneath.
+        self.model_tree = QtWidgets.QTreeView()
+        self.model_tree.setHeaderHidden(True)
+        self.model_tree.setRootIsDecorated(True)
+        self.model_tree.setItemsExpandable(True)
+        self.model_tree.setExpandsOnDoubleClick(False)
+        self.model_tree.setUniformRowHeights(True)
+        self.model_tree.setMinimumHeight(220)
+        self.model_combo.setView(self.model_tree)
         harness_row.addWidget(self.model_combo, 2)
         harness_row.addWidget(QtWidgets.QLabel("Think"))
         self.thinking_combo = QtWidgets.QComboBox()
@@ -215,7 +225,6 @@ class CodexPanelWidget(QtWidgets.QWidget):
         saved = self.store.load()
         self._models_signature = None
         self._applied_model = None
-        self.model_combo.clear()
         self.thinking_combo.clear()
         self.chat.clear()
         if saved["messages"]:
@@ -349,25 +358,86 @@ class CodexPanelWidget(QtWidgets.QWidget):
         self._models_signature = signature
         self._syncing_combos = True
         try:
-            self.model_combo.clear()
+            store = QtGui.QStandardItemModel(self.model_combo)
+            groups: dict[str, list] = {}
+            order: list[str] = []
             for model in models:
-                self.model_combo.addItem(model["label"], model)
+                provider = (
+                    model["id"].split("/", 1)[0]
+                    if "/" in model["id"]
+                    else (self.client.label if self.client else "Models")
+                )
+                if provider not in groups:
+                    groups[provider] = []
+                    order.append(provider)
+                groups[provider].append(model)
+            for provider in order:
+                header = QtGui.QStandardItem(provider)
+                header.setFlags(header.flags() & ~QtCore.Qt.ItemFlag.ItemIsSelectable)
+                font = header.font()
+                font.setBold(True)
+                header.setFont(font)
+                store.appendRow(header)
+                for model in groups[provider]:
+                    item = QtGui.QStandardItem(model.get("label") or model["id"])
+                    item.setData(model, QtCore.Qt.ItemDataRole.UserRole)
+                    header.appendRow(item)
+            self.model_combo.setModel(store)
             saved = str(self.settings.value("model/%s" % self.client.name, ""))
             wanted = saved or getattr(self.client, "current_model", None) or ""
-            index = next(
-                (i for i, m in enumerate(models) if m["id"] == wanted), 0
-            )
-            self.model_combo.setCurrentIndex(index)
-            self._apply_model_index(index, save=False)
+            index = self._find_model_index(wanted)
+            if not index.isValid():
+                index = self._first_model_index()
+            if index.isValid():
+                self.model_combo.setRootModelIndex(index.parent())
+                self.model_combo.setCurrentIndex(index.row())
+                self.model_combo.setRootModelIndex(QtCore.QModelIndex())
+                self.model_tree.expand(index.parent())
+            else:
+                self.model_combo.setRootModelIndex(QtCore.QModelIndex())
+                self.model_combo.setCurrentIndex(-1)
+            self._apply_current_model(save=False)
         finally:
             self._syncing_combos = False
 
+    def _first_model_index(self):
+        """First selectable model leaf, for the deterministic default pick."""
+        model = self.model_combo.model()
+        if model is None:
+            return QtCore.QModelIndex()
+        for row in range(model.rowCount()):
+            parent = model.index(row, 0)
+            if model.rowCount(parent):
+                return model.index(0, 0, parent)
+            if isinstance(model.data(parent, QtCore.Qt.ItemDataRole.UserRole), dict):
+                return parent
+        return QtCore.QModelIndex()
+
+    def _find_model_index(self, model_id: str):
+        """Locate a model id inside the grouped combo model."""
+        model = self.model_combo.model()
+        if model is None or not model_id:
+            return QtCore.QModelIndex()
+
+        def find(parent):
+            for row in range(model.rowCount(parent)):
+                index = model.index(row, 0, parent)
+                data = model.data(index, QtCore.Qt.ItemDataRole.UserRole)
+                if isinstance(data, dict) and data.get("id") == model_id:
+                    return index
+                nested = find(index)
+                if nested.isValid():
+                    return nested
+            return QtCore.QModelIndex()
+
+        return find(QtCore.QModelIndex())
+
     def _on_model_picked(self, index: int):
         if not self._syncing_combos:
-            self._apply_model_index(index, save=True)
+            self._apply_current_model(save=True)
 
-    def _apply_model_index(self, index: int, save: bool):
-        model = self.model_combo.itemData(index)
+    def _apply_current_model(self, save: bool):
+        model = self.model_combo.currentData()
         if not model:
             return
         if model["id"] != self._applied_model:

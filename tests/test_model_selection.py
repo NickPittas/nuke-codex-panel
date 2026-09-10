@@ -110,12 +110,17 @@ def test_model_selection_is_stable_and_not_reapplied_forever(monkeypatch, tmp_pa
     panel = panel_widget.CodexPanelWidget()
     for _ in range(20):
         app.processEvents()
-    assert panel.model_combo.count() == 2
+    # Models are grouped under a bold provider row; both models reachable.
+    assert panel._find_model_index("prov/alpha").isValid()
+    assert panel._find_model_index("prov/beta").isValid()
     assert panel.client.set_model_calls == ["prov/alpha"], panel.client.set_model_calls
 
     # The user picks the second model...
-    panel.model_combo.setCurrentIndex(1)
-    panel._on_model_picked(1)
+    beta = panel._find_model_index("prov/beta")
+    panel.model_combo.setRootModelIndex(beta.parent())
+    panel.model_combo.setCurrentIndex(beta.row())
+    panel.model_combo.setRootModelIndex(QtCore.QModelIndex())
+    panel._on_model_picked(beta.row())
     for _ in range(20):
         app.processEvents()
 
