@@ -13,9 +13,3 @@ volumetrics_*.png
 # Pix Agent
 .pi/
 .pi-lens/
-
-# Deepwork session state
-.slim/deepwork/
-
-# Serena tool state
-.serena/
