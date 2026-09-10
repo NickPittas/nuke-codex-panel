@@ -73,7 +73,7 @@ def _process_alive(pid: int) -> bool:
 
 
 def _discover_bridge() -> dict:
-    explicit = os.environ.get("NUKE_CODEX_BRIDGE_FILE")
+    explicit = os.environ.get("NUKE_BRIDGE_FILE") or os.environ.get("NUKE_CODEX_BRIDGE_FILE")
     if explicit:
         path = Path(explicit)
         try:

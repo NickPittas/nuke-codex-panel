@@ -1,4 +1,4 @@
-"""Codex App Server client."""
+"""Codex App Server client (moved to nuke_codex_panel.harnesses.codex)."""
 
 from .base import BackendClient
 from .client import CodexAppServerClient
