@@ -1,19 +1,45 @@
 # Nuke Codex Panel
 
-A native, dockable Codex client for Foundry Nuke, designed around unrestricted Nuke Python execution and immediate visual context from the Viewer, Node Graph, and full interface.
+A native, dockable agent client for Foundry Nuke, designed around unrestricted Nuke Python execution and immediate visual context from the Viewer, Node Graph, and full interface.
 
-The current prototype supports Nuke loading and docking, screenshot capture, a live streaming Codex App Server conversation, and authenticated MCP control of the active Nuke session. See [`docs/PLAN.md`](docs/PLAN.md) for the architecture and milestones.
+The panel talks to several agent harnesses — Codex, Claude Code, pi, OMP, and opencode — selectable from the Harness dropdown, with per-harness model and thinking-level pickers read live from the harness.
+
+The chat streams answers token by token as Markdown bubbles. Model reasoning, replies, and tool calls appear as separate blocks **in the order they happen** — `reply → tool call → thinking → reply → tool call` — and thinking and tool blocks collapse when you click their header (a collapse choice sticks for later blocks of the same kind). Code blocks render in monospace, and the mouse wheel scrolls the chat from anywhere over it.
+
+## Chats, context, and sessions
+
+Chats are saved per project (in the app data dir, keyed by a hash of the script path, so nothing is written into project folders) and restored when the panel reopens. When a stored session exists the panel asks whether to **resume** it — resuming keeps the model's context across Nuke restarts:
+
+| Harness | Session handle | Resumed via |
+|---------|----------------|-------------|
+| Codex | thread id | `thread/resume` |
+| pi / OMP | session file | `--session-dir` + `--session-id` |
+| opencode | session id | server-side sessions |
+| Claude | session id | `--resume` (untested here) |
+
+**New chat** archives the current transcript to `archive/` and starts with an empty model context. The context bar under the status line shows the current context-window usage (`context 60.0k / 200.0k (30%)`); hover it for the session breakdown (input / cached / output / cost) where the harness reports it.
+
+## Harnesses
+
+| Harness | Transport | Nuke MCP tools | Notes |
+|---------|-----------|----------------|-------|
+| Codex | `codex app-server` JSON-RPC | yes (injected config) | models + reasoning effort via `model/list` |
+| Claude | `claude -p --output-format stream-json` | yes (`--mcp-config`) | thinking combo disabled (no CLI flag); adapter not yet smoke-tested |
+| pi | `pi --mode rpc` | yes (`pi-mcp-adapter` + `~/.pi/agent/mcp.json`) | install the adapter once: `pi install npm:pi-mcp-adapter` |
+| OMP | `omp --mode rpc` | yes (native `~/.omp/agent/mcp.json`) | thinking combo disabled (older RPC command set) |
+| opencode | `opencode serve` HTTP + SSE | yes (`OPENCODE_CONFIG` overlay with allow-all permissions) | thinking maps to model variants |
+
+Binary lookup probes in this order: the panel's **Settings…** dialog override (per harness, persisted in QSettings), then `NUKE_CODEX_BIN` / `NUKE_CLAUDE_BIN` / `NUKE_PI_BIN` / `NUKE_OMP_BIN` / `NUKE_OPENCODE_BIN`, then `PATH`, then common install locations. The Settings dialog shows the live detection result for each harness. Non-Codex harnesses register the bundled Nuke MCP server so `execute_python`, `get_nuke_context`, and `capture_nuke_screenshot` keep working; the sidecar auto-discovers the newest live Nuke session.
+
+Adding another harness later: subclass `HarnessClient` in `nuke_codex_panel/harnesses/` and register it in `HARNESSES`.
 
 ## Requirements
 
 - Foundry Nuke 17+ with PySide6.
-- The [Codex CLI](https://developers.openai.com/codex/cli/) installed and authenticated.
-- The ChatGPT desktop app is optional and is not used by the Nuke panel.
+- At least one authenticated harness CLI: `codex`, `claude`, `pi`, `omp`, or `opencode`.
 - KDE Wayland capture currently requires `spectacle`; other desktops use the available Qt/OpenGL fallbacks.
 
-The panel launches `codex app-server` locally. Installing only the ChatGPT app does not guarantee that a `codex` executable is available to Nuke.
-
-## Install Codex
+## Codex setup
 
 Install the CLI using npm:
 
