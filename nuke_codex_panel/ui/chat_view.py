@@ -37,6 +37,10 @@ QTextBrowser#thinkingText { color: #9aa0a8; }
 class BubbleText(QtWidgets.QTextBrowser):
     """Read-only Markdown text that shrinks vertically to fit its content."""
 
+    # Emitted once the document has laid out a new size; the enclosing chat
+    # uses it to re-pin the view only when the user is already at the bottom.
+    height_changed = QtCore.Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setOpenExternalLinks(True)
@@ -49,7 +53,12 @@ class BubbleText(QtWidgets.QTextBrowser):
         document = self.document()
         document.setDocumentMargin(0)
         document.setDefaultStyleSheet(_DOC_STYLESHEET)
-        document.contentsChanged.connect(self._fit_height)
+        # contentsChanged fires while the text still has its PRE-layout size;
+        # refitting from document.size() there made the bubble height wobble on
+        # every streamed chunk (the whole chat then jumped). Only update the
+        # height when the document has actually laid out: documentSizeChanged.
+        document.contentsChanged.connect(self._schedule_fit)
+        document.documentLayout().documentSizeChanged.connect(self._fit_height)
         self.viewport().installEventFilter(self)
 
     def hasHeightForWidth(self) -> bool:
@@ -60,9 +69,14 @@ class BubbleText(QtWidgets.QTextBrowser):
         document.setTextWidth(max(width - 4, 50))
         return int(document.size().height()) + 6
 
+    def _schedule_fit(self):
+        # Cheap: signals the layout machinery without reading a stale size.
+        self.updateGeometry()
+
     def _fit_height(self):
         self.updateGeometry()
         self.setMinimumHeight(self.heightForWidth(self.viewport().width() or 300))
+        self.height_changed.emit()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -310,6 +324,7 @@ class ChatView(QtWidgets.QScrollArea):
                 self._render_section(section, final=True)  # full render on close
             text = BubbleText()
             text.setObjectName("thinkingText" if kind == "thinking" else "answerText")
+            text.height_changed.connect(self._stick_if_pinned)
             if kind == "thinking":
                 container = CollapsibleSection("Thinking", text)
                 self._track_collapse(container, "thinking")
@@ -324,6 +339,7 @@ class ChatView(QtWidgets.QScrollArea):
             section["record"] = {"kind": kind, "text": ""}
             self._record["sections"].append(section["record"])
             self._tool_group = None  # a reply or thought breaks the tool run
+            self._scroll_to_bottom(force=True)
         section["buffer"] += delta
         if not self._render_timer.isActive():
             self._render_timer.start()
@@ -358,7 +374,8 @@ class ChatView(QtWidgets.QScrollArea):
             placeholder = "thinking…" if section["kind"] == "thinking" else "…"
             section["widget"].setMarkdown(buffer or placeholder)
         section["record"]["text"] = buffer
-        self._scroll_to_bottom()
+        # No scroll here: the section's height_changed already re-pins the view
+        # after layout settles, and only when the user is at the bottom.
         # Adaptive backoff: expensive renders stream slower so Nuke's main
         # thread keeps breathing.
         elapsed = time.monotonic() - start
@@ -397,15 +414,24 @@ class ChatView(QtWidgets.QScrollArea):
         role_label.setObjectName("roleLabel")
         bubble_layout.addWidget(role_label)
         text = BubbleText(bubble)
+        text.height_changed.connect(self._stick_if_pinned)
         if markdown:
             text.setMarkdown(markdown)
         bubble_layout.addWidget(text)
         self._attach_row(bubble, stretch_left=(role == "user"))
-        self._scroll_to_bottom()
+        self._scroll_to_bottom(force=True)
         return text
 
-    def _scroll_to_bottom(self):
+    def _scroll_to_bottom(self, force: bool = False):
+        """Pin to the newest content, unless the user scrolled up to read."""
+        bar = self.verticalScrollBar()
+        if not force and bar.value() < bar.maximum() - 40:
+            return
         QtCore.QTimer.singleShot(
             0,
             lambda: self.verticalScrollBar().setValue(self.verticalScrollBar().maximum()),
         )
+
+    def _stick_if_pinned(self):
+        """A bubble grew: re-pin only if the user was already at the bottom."""
+        self._scroll_to_bottom(force=False)

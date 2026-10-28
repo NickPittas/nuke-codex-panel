@@ -10,13 +10,30 @@ import shutil
 from PySide6 import QtCore
 
 
+def _user_bin_dirs() -> list[str]:
+    """Per-user bin dirs a desktop-launched Nuke may be missing from PATH."""
+    home = Path.home()
+    return [
+        str(path)
+        for path in (
+            home / ".local" / "share" / "mise" / "shims",
+            home / ".npm-global" / "bin",
+            home / ".local" / "bin",
+            home / ".bin",
+        )
+        if path.is_dir()
+    ]
+
+
 def resolve_binary(env_var: str, name: str, extra_paths: list[str] | None = None) -> str | None:
     """Resolve a harness binary without assuming the desktop-launched Nuke PATH.
 
-    Precedence: Settings dialog override, env var, PATH, known install dirs.
+    Precedence: Settings dialog override, env var, PATH, per-user bin dirs,
+    then harness-specific known install dirs.
     """
     override = QtCore.QSettings("nuke-codex-panel", "panel").value("binary/%s" % name, "")
     candidates = [str(override) if override else None, os.environ.get(env_var), shutil.which(name)]
+    candidates.extend(os.path.join(directory, name) for directory in _user_bin_dirs())
     candidates.extend(extra_paths or [])
     return next((path for path in candidates if path and Path(path).is_file()), None)
 
@@ -247,6 +264,10 @@ class JsonlProcessClient(HarnessClient):
 
     def _on_process_error(self, error):
         if self._stopping:
+            return
+        if self.process.state() == QtCore.QProcess.ProcessState.NotRunning:
+            # errorOccurred(Crashed) after the process already exited is
+            # teardown noise; the finished() handler reports the real exit.
             return
         self._read_stderr()
         detail = self._stderr_tail.strip().splitlines()

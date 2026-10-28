@@ -20,6 +20,14 @@ def runtime_directory() -> Path:
     return Path(base) / ("nuke-codex-panel-%s" % os.getuid())
 
 
+def _process_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
 class NukeBridgeServer(QtCore.QObject):
     """Serve Nuke operations without letting worker threads touch Nuke."""
 
@@ -44,7 +52,13 @@ class NukeBridgeServer(QtCore.QObject):
         directory = runtime_directory()
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(directory, 0o700)
-        self.discovery_path = directory / ("session-%s.json" % os.getpid())
+        # Unique per instance: two panels in the same Nuke process share the
+        # pid, and a shared filename made one panel's stop() delete the other's
+        # discovery record, bricking the MCP sidecar for the surviving panel.
+        self._prune_stale_sessions(directory)
+        self.discovery_path = directory / (
+            "session-%s-%s.json" % (os.getpid(), secrets.token_hex(4))
+        )
         record = {
             "pid": os.getpid(),
             "host": "127.0.0.1",
@@ -57,6 +71,20 @@ class NukeBridgeServer(QtCore.QObject):
         temporary.replace(self.discovery_path)
         self.status_changed.emit("Nuke bridge ready on localhost")
         return True
+
+    def _prune_stale_sessions(self, directory: Path):
+        """Drop discovery records whose Nuke process is gone; keep ours alive."""
+        for path in directory.glob("session-*.json"):
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+                if _process_alive(int(record.get("pid", 0))):
+                    continue
+            except Exception:
+                continue
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def stop(self):
         self.server.close()

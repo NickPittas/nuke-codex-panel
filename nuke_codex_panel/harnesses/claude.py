@@ -78,6 +78,17 @@ class ClaudeClient(JsonlProcessClient):
         self._turn_open = False
         super().start()
 
+    def _on_started(self):
+        # claude's stream-json emits `init` only when it starts processing the
+        # FIRST user message; with an idle, open stdin it never comes. The
+        # panel gates Send on ready, so waiting for init deadlocks Claude
+        # forever ("process stuck on Starting…", Send never enabled). The
+        # models are static, so announce them and become ready as soon as the
+        # process runs; the first send triggers init.
+        self.models_changed.emit([dict(model) for model in KNOWN_MODELS])
+        self._set_ready(True)
+        self.status_changed.emit("Claude connected — send a message to start")
+
     def _handle_message(self, message: dict):
         kind = message.get("type")
         if kind == "system" and message.get("subtype") == "init":

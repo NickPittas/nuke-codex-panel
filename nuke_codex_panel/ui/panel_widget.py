@@ -226,6 +226,16 @@ class CodexPanelWidget(QtWidgets.QWidget):
         self._models_signature = None
         self._applied_model = None
         self.thinking_combo.clear()
+        # Drop whatever the previous harness showed in the model picker: it
+        # must not linger ("Codex models while on Claude") until the new
+        # harness reports its own list.
+        placeholder = QtGui.QStandardItem("Loading models…")
+        placeholder.setFlags(placeholder.flags() & ~QtCore.Qt.ItemFlag.ItemIsSelectable)
+        store = QtGui.QStandardItemModel(self.model_combo)
+        store.appendRow(placeholder)
+        self.model_combo.setModel(store)
+        self.model_combo.setCurrentIndex(0)
+        self.model_combo.setEnabled(False)
         self.chat.clear()
         if saved["messages"]:
             self.chat.load_records(saved["messages"])
@@ -344,11 +354,21 @@ class CodexPanelWidget(QtWidgets.QWidget):
         if self.client is not None and not self.client.ready:
             self.client.restart()
 
-    def _on_models_changed(self, models: list):
+    def _on_models_changed(self, models: list, client: "object | None" = None):
+        sender = self.sender()
+        if sender is not None and sender is not self.client:
+            # A harness we just stopped can still flush its model list during
+            # teardown; it must not repopulate the dropdown.
+            return
+        if client is not None and client is not self.client:
+            return
         if self.model_combo.view().isVisible():
             # Rebuilding under an open popup is what made the dropdown flicker;
             # try again once the user has finished choosing.
-            QtCore.QTimer.singleShot(200, lambda m=models: self._on_models_changed(m))
+            own = self.client
+            QtCore.QTimer.singleShot(
+                200, lambda m=models: self._on_models_changed(m, own)
+            )
             return
         signature = [
             (m["id"], m.get("label"), tuple(m.get("efforts") or [])) for m in models
@@ -396,6 +416,7 @@ class CodexPanelWidget(QtWidgets.QWidget):
             else:
                 self.model_combo.setRootModelIndex(QtCore.QModelIndex())
                 self.model_combo.setCurrentIndex(-1)
+            self.model_combo.setEnabled(True)
             self._apply_current_model(save=False)
         finally:
             self._syncing_combos = False
