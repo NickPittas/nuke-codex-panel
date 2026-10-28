@@ -13,3 +13,6 @@ volumetrics_*.png
 # Pix Agent
 .pi/
 .pi-lens/
+
+# Serena local tool state
+.serena/
