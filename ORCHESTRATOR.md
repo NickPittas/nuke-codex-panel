@@ -12,6 +12,7 @@ Decision log (append-only)
 - 2026-10-28 Rediscovery of binary resolution: `resolve_binary` now also probes per-user dirs (`~/.local/share/mise/shims`, `~/.npm-global/bin`, `~/.local/bin`, `~/.bin`) after PATH — desktop-launched Nuke may have a minimal PATH (README already warns; user hit this with Claude before mise shims were on PATH).
 - 2026-10-28 Bridge discovery filenames are per-panel-instance (`session-<pid>-<hex>.json`) + stale-prune; a shared `session-<pid>.json` let one panel's `stop()` delete the other's record, bricking the MCP sidecar (also broke the orchestrator's own MCP link mid-session).
 - 2026-10-28 Teardown noise: `errorOccurred(Crashed)` suppressed when the QProcess already exited (NotRunning); `finished()` reports real exits.
+- 2026-10-28 wlroots capture (user's WIP, committed fb4f784): `capture/widgets.py` adds `_grim_grab` (Hyprland/Sway via `grim`, Spectacle-style 12s timeout/kill), used when `XDG_SESSION_TYPE == wayland` and KDE Spectacle does not apply.
 
 Active task ledger
 - All items of user report fixed + committed (8fd9ce3): (1) Claude not opening on select; (2) stream scroll jumping; (3) stale model dropdown on harness switch + forced Reconnect; (4) bridge discovery collision. Live-verified in the user's docked Nuke via in-memory module reload; user's Nuke restart loads files durably.
