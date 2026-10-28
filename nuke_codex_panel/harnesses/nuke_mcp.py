@@ -16,8 +16,14 @@ NUKE_SYSTEM_PROMPT = (
     "Treat attached screenshots as current compositing context. Use the Nuke "
     "MCP tools to inspect the current comp, capture fresh visual evidence, and "
     "execute Python. execute_python is the primary unrestricted Nuke control "
-    "surface; prefer concise Python over inventing many narrow actions. Verify "
-    "visual changes with a fresh Viewer or Node Graph screenshot."
+    "surface; prefer concise Python over inventing many narrow actions, but use native "
+    "nodes and knobs rather than expressions standing in for them. Before building or "
+    "organizing any node graph, call get_compositing_guidance(..., section=\"workflow\") for "
+    "fundamentals/graph-conventions and fundamentals/quality-safeguards; before keying, also "
+    "fundamentals/keying-conventions. This applies even to familiar nodes. For unfamiliar "
+    "operations use search_compositing_knowledge or get_node_reference; node references are static 17.1 "
+    "docs, so confirm availability in the installed Nuke. Verify visual changes with a "
+    "fresh Viewer or Node Graph screenshot."
 )
 
 

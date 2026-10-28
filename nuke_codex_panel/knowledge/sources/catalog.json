@@ -1,0 +1,129 @@
+{
+  "foundry-17.1": {
+    "title": "Foundry Nuke 17.1 online documentation (user guide and reference guide)",
+    "type": "documentation",
+    "publisher": "Foundry",
+    "version": "Nuke 17.1",
+    "url": "https://learn.foundry.com/nuke/17.1/content/reference_guide.html"
+  },
+  "brinkmann-2e": {
+    "title": "The Art and Science of Digital Compositing, Second Edition",
+    "type": "book",
+    "author": "Ron Brinkmann",
+    "edition": "2nd",
+    "year": 2008,
+    "publisher": "Morgan Kaufmann (Elsevier)",
+    "isbn": "978-0-12-370638-6"
+  },
+  "studio-conventions": {
+    "title": "Teacher-supplied Nuke production conventions",
+    "type": "user-conventions",
+    "provided": "2026-10-28",
+    "scope": "Project and studio preferences supplied by the user in conversation. They are working policy, not universal Nuke facts and not Foundry requirements. No public URL exists. Foundry behaviour is cited separately from foundry-17.1."
+  },
+  "lesson-01": {
+    "title": "Teacher lesson 01 transcript",
+    "type": "lesson-transcript",
+    "filename": "Lesson 01 Final.srt",
+    "provided": "2026-10-28",
+    "limitations": "Transcribed lesson text may contain errors; visual context unavailable; historical UI may differ. Current written conventions govern preferred workflow."
+  },
+  "lesson-02": {
+    "title": "Teacher lesson 02 transcript",
+    "type": "lesson-transcript",
+    "filename": "Lesson 02 Final.srt",
+    "provided": "2026-10-28",
+    "limitations": "Transcribed lesson text may contain errors; visual context unavailable; historical UI may differ. Current written conventions govern preferred workflow."
+  },
+  "lesson-03": {
+    "title": "Teacher lesson 03 transcript",
+    "type": "lesson-transcript",
+    "filename": "Lesson 03 Final.srt",
+    "provided": "2026-10-28",
+    "limitations": "Transcribed lesson text may contain errors; visual context unavailable; historical UI may differ. Current written conventions govern preferred workflow."
+  },
+  "lesson-04": {
+    "title": "Teacher lesson 04 transcript",
+    "type": "lesson-transcript",
+    "filename": "Lesson 04 c.srt",
+    "provided": "2026-10-28",
+    "limitations": "Transcribed lesson text may contain errors; visual context unavailable; historical UI may differ. Current written conventions govern preferred workflow."
+  },
+  "lesson-05": {
+    "title": "Teacher lesson 05 transcript",
+    "type": "lesson-transcript",
+    "filename": "Lesson 05.srt",
+    "provided": "2026-10-28",
+    "limitations": "Transcribed lesson text may contain errors; visual context unavailable; historical UI may differ. Current written conventions govern preferred workflow."
+  },
+  "lesson-06": {
+    "title": "Teacher lesson 06 transcript",
+    "type": "lesson-transcript",
+    "filename": "Lesson 06.srt",
+    "provided": "2026-10-28",
+    "limitations": "Transcribed lesson text may contain errors; visual context unavailable; historical UI may differ. Current written conventions govern preferred workflow."
+  },
+  "lesson-07": {
+    "title": "Teacher lesson 07 transcript",
+    "type": "lesson-transcript",
+    "filename": "Lesson 07.srt",
+    "provided": "2026-10-28",
+    "limitations": "Transcribed lesson text may contain errors; visual context unavailable; historical UI may differ. Current written conventions govern preferred workflow."
+  },
+  "lesson-08": {
+    "title": "Teacher lesson 08 transcript",
+    "type": "lesson-transcript",
+    "filename": "Lesson 08.srt",
+    "provided": "2026-10-28",
+    "limitations": "Transcribed lesson text may contain errors; visual context unavailable; historical UI may differ. Current written conventions govern preferred workflow."
+  },
+  "lesson-09": {
+    "title": "Teacher lesson 09 transcript",
+    "type": "lesson-transcript",
+    "filename": "Lesson 09.srt",
+    "provided": "2026-10-28",
+    "limitations": "Transcribed lesson text may contain errors; visual context unavailable; historical UI may differ. Current written conventions govern preferred workflow."
+  },
+  "lesson-10": {
+    "title": "Teacher lesson 10 transcript",
+    "type": "lesson-transcript",
+    "filename": "Lesson 10.srt",
+    "provided": "2026-10-28",
+    "limitations": "Transcribed lesson text may contain errors; visual context unavailable; historical UI may differ. Current written conventions govern preferred workflow."
+  },
+  "lesson-11": {
+    "title": "Teacher lesson 11 transcript",
+    "type": "lesson-transcript",
+    "filename": "Lesson 11.srt",
+    "provided": "2026-10-28",
+    "limitations": "Transcribed lesson text may contain errors; visual context unavailable; historical UI may differ. Current written conventions govern preferred workflow."
+  },
+  "lesson-12a": {
+    "title": "Teacher lesson 12a transcript",
+    "type": "lesson-transcript",
+    "filename": "Lesson 12a.srt",
+    "provided": "2026-10-28",
+    "limitations": "Transcribed lesson text may contain errors; visual context unavailable; historical UI may differ. Current written conventions govern preferred workflow."
+  },
+  "lesson-12b": {
+    "title": "Teacher lesson 12b transcript",
+    "type": "lesson-transcript",
+    "filename": "Lesson 12b.srt",
+    "provided": "2026-10-28",
+    "limitations": "Transcribed lesson text may contain errors; visual context unavailable; historical UI may differ. Current written conventions govern preferred workflow."
+  },
+  "lesson-13": {
+    "title": "Teacher lesson 13 transcript",
+    "type": "lesson-transcript",
+    "filename": "Lesson 13.srt",
+    "provided": "2026-10-28",
+    "limitations": "Transcribed lesson text may contain errors; visual context unavailable; historical UI may differ. Current written conventions govern preferred workflow."
+  },
+  "lesson-14": {
+    "title": "Teacher lesson 14 transcript",
+    "type": "lesson-transcript",
+    "filename": "Lesson 14.srt",
+    "provided": "2026-10-28",
+    "limitations": "Transcribed lesson text may contain errors; visual context unavailable; historical UI may differ. Current written conventions govern preferred workflow."
+  }
+}

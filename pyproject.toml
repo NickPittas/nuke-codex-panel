@@ -14,5 +14,15 @@ nuke-codex-mcp = "nuke_codex_panel.mcp_server.server:main"
 [tool.setuptools.packages.find]
 include = ["nuke_codex_panel", "nuke_codex_panel.*"]
 
+[tool.setuptools.package-data]
+"nuke_codex_panel.knowledge" = [
+    "SKILL.md",
+    "fundamentals/*.md",
+    "topics/*.md",
+    "nodes/*.md",
+    "sources/*.json",
+    "coverage.json",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

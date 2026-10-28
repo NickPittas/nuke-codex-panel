@@ -29,14 +29,14 @@ Chats are saved per project (in the app data dir, keyed by a hash of the script 
 | OMP | `omp --mode rpc` | yes (native `~/.omp/agent/mcp.json`) | thinking combo disabled (older RPC command set) |
 | opencode | `opencode serve` HTTP + SSE | yes (`OPENCODE_CONFIG` overlay with allow-all permissions) | thinking maps to model variants |
 
-Binary lookup probes in this order: the panel's **Settings…** dialog override (per harness, persisted in QSettings), then `NUKE_CODEX_BIN` / `NUKE_CLAUDE_BIN` / `NUKE_PI_BIN` / `NUKE_OMP_BIN` / `NUKE_OPENCODE_BIN`, then `PATH`, then common install locations. The Settings dialog shows the live detection result for each harness. Non-Codex harnesses register the bundled Nuke MCP server so `execute_python`, `get_nuke_context`, and `capture_nuke_screenshot` keep working; the sidecar auto-discovers the newest live Nuke session.
+Binary lookup probes in this order: the panel's **Settings…** dialog override (per harness, persisted in QSettings), then `NUKE_CODEX_BIN` / `NUKE_CLAUDE_BIN` / `NUKE_PI_BIN` / `NUKE_OMP_BIN` / `NUKE_OPENCODE_BIN`, then `PATH`, then common install locations. The Settings dialog shows the live detection result for each harness. Every harness registers the same bundled Nuke MCP server, so all six tools (see [One application, one bundled MCP](#one-application-one-bundled-mcp)) are available to all five panel harnesses and to external MCP clients. The compact shared prompt is injected only by the five panel harnesses; external clients get the retrieval cue from the `execute_python` tool description. The sidecar auto-discovers the newest live Nuke session for the three live tools.
 
 Adding another harness later: subclass `HarnessClient` in `nuke_codex_panel/harnesses/` and register it in `HARNESSES`.
 
 ## Requirements
 
-- Foundry Nuke 17+ with PySide6.
-- System Python 3 for the bundled MCP server (this alone is enough for external MCP-only use; no harness CLI needed).
+- For the docked panel and the live Nuke tools: Foundry Nuke 17+ with PySide6.
+- System Python 3 (3.11+) for the bundled MCP server. Alone it is enough for the three knowledge tools (no Nuke, Qt, bridge, network or PDF) and for registering external clients; no harness CLI needed. The live tools additionally need a running Nuke GUI session.
 - For the docked panel: at least one authenticated harness CLI: `codex`, `claude`, `pi`, `omp`, or `opencode`. The Codex CLI install below is one option.
 - The ChatGPT desktop app is optional and is not used by the Nuke panel.
 - KDE Wayland capture currently requires `spectacle`; other desktops use the available Qt/OpenGL fallbacks.
@@ -101,7 +101,25 @@ This project is a single application containing the dockable panel and the MCP s
 - All five harnesses (Codex, Claude, pi, OMP, opencode) launch the same bundled MCP server. The command and environment come from `nuke_codex_panel/harnesses/nuke_mcp.py` (`server_command()`, `server_environment(bridge_path)`), and panel instances are pinned to this Nuke's exact bridge discovery record. The package location, not the active project's working directory, determines `PYTHONPATH`. No global MCP registration is needed for panel-only use, and a panel's bridge pin is not written into persistent global client configuration; external registrations without a pin keep auto-discovering the newest live Nuke.
 - External agents need only a registration pointing at the same bundled stdio server. They do not need a pane open.
 
-The tools are `execute_python`, `get_nuke_context`, and `capture_nuke_screenshot`.
+### Tools
+
+Three live tools talk to a running Nuke through the bridge, so a Nuke GUI session is required: `execute_python`, `get_nuke_context`, `capture_nuke_screenshot`. An explicit `NUKE_CODEX_BRIDGE_FILE` pin is optional; it only selects which session to use and fails closed if invalid.
+
+Three read-only knowledge tools run directly in the stdio sidecar before bridge dispatch, so they work with Nuke closed or an invalid pin:
+
+- `search_compositing_knowledge(query, limit=3 (1–8), kind=all|topic|fundamental|node)` returns metadata only (`id`, `title`, `kind`, `summary`, `requires`, `version`), never document bodies.
+- `get_compositing_guidance(topic_id, section=overview|workflow|verify|pitfalls|full)` returns the chosen section of a router, fundamental or topic document (default `overview`) plus compact metadata and Sources. Prerequisite and related IDs are listed, not expanded recursively.
+- `get_node_reference(node, section=overview|inputs|controls|verify|pitfalls|full)` resolves a node ID, title or alias and returns the chosen section with `runtime_verified: false`.
+
+Returned content is capped at 6000 characters including citations, with a truncation flag and the list of available sections. Unknown IDs/nodes give an explicit error with at most three suggestions. Example: search `"keymix vs addmix"`, then `get_compositing_guidance("topics/addmix-keymix", "workflow")`.
+
+The pack is 116 packaged Markdown documents under `nuke_codex_panel/knowledge/`: a router, 10 fundamentals, 38 topics (the full curriculum) and 67 node references. It is original, paraphrased guidance citing primary Foundry Nuke 17.1 documentation and Brinkmann's *The Art and Science of Digital Compositing* (2nd ed.) for concepts; there is no PDF dependency and no book text is shipped. Node references are static 17.1 documentation, not live-runtime verification of what your installed Nuke offers.
+
+The teacher-supplied production conventions are encoded as three fundamentals: `fundamentals/graph-conventions`, `fundamentals/keying-conventions` and `fundamentals/quality-safeguards`, cited to the `studio-conventions` source. For this course's work they are required, not optional agent style, but they are the teacher's project/studio requirements, not universal Nuke engine constraints; Foundry-documented behaviour stays in the node references and is cited separately. The shared prompt (all five harnesses) and the external `execute_python` description tell models to call `get_compositing_guidance(..., section="workflow")` for the graph and quality conventions before building or organizing any graph, and for the keying conventions before keying, even with familiar nodes; everything else stays on-demand.
+
+The teacher's lesson transcripts are now integrated: the pack uses selected original paraphrases (no transcript text is shipped) with citations by lesson filename and timecode range, and all 15 lessons are recorded in the source metadata. The transcripts may contain transcription errors and the video context was not verified, so they are teaching evidence, not video-validated facts. The pack has no dependency on the transcript files or their mount. Where an older lesson example differs from the currently written conventions, the written conventions take precedence. Common student mistakes are already encoded as pitfalls and safeguards. Raw teacher `.nk` example files are still to come.
+
+Editing the pack: each document starts with frontmatter of one JSON-valued key per line (a YAML subset: `id`, `kind`, `title`, `category`, `summary`, `aliases`, `tags`, `requires`, `related`, `nodes`, `version`, `source_ids`; all required). `id` equals the path under `knowledge/` without `.md`; directories are flat (`fundamentals/`, `topics/`, `nodes/`), and required section headings differ by kind (topics/fundamentals: Applicability, Workflow, Verify, Pitfalls, Sources; nodes: Purpose, Inputs, Controls, Verify, Pitfalls, Sources). The one exception is the router `SKILL.md`: its `id` is `overview` and it also carries `name` and `description`. Well-formed new files are indexed automatically; the corpus is cached once per sidecar process, so restart the sidecar (restart Nuke or the external client) after edits, and rebuild/reinstall the wheel if you use an installed copy. Raw teacher `.nk` examples may later refine the content; none are required now, and the pack does not train or fine-tune any model.
 
 ### Approval and trust
 
@@ -171,7 +189,7 @@ The longer tool timeout allows time for the Python confirmation dialog. Remove w
 
 Claude Code can register the same entry for all projects with `claude mcp add --scope user nuke --env PYTHONPATH="$HOME/.nuke/nuke-codex-panel" -- /usr/bin/python3 -m nuke_codex_panel.mcp_server.server` (the default scope is local to the current project).
 
-Requirements: local stdio transport, project directory on `PYTHONPATH` (no `pip install` needed), same OS user as Nuke, and MCP image-content support if screenshots should reach the model visually. External MCP-only use needs only Nuke (GUI session) and system Python, not the Codex CLI.
+Requirements: local stdio transport, project directory on `PYTHONPATH` (no `pip install` needed), same OS user as Nuke, and MCP image-content support if screenshots should reach the model visually. External MCP-only use needs system Python only for the knowledge tools; the live tools also need a Nuke GUI session. Neither needs the Codex CLI.
 
 ### Optional: console entry point
 
@@ -216,7 +234,7 @@ When installing this project for a user:
 - Captured images are attached as `localImage` inputs to the next prompt.
 - Pending images have individual remove buttons and Clear All, and disappear automatically after Send.
 - Captures are stored under `~/.cache/nuke-codex-panel/captures`; the panel does not rely on `/tmp` permissions.
-- A small local MCP server exposes structured Nuke context, screenshots, and unrestricted `execute_python`.
+- A small local MCP server exposes structured Nuke context, screenshots, unrestricted `execute_python`, and three read-only compositing knowledge tools (see [Tools](#tools)).
 - Python runs on Nuke's Qt main thread in a persistent namespace containing `nuke`, captures output/errors, reports node changes, and uses an undo group by default.
 - Each Python request requires confirmation in Nuke. Enable **Trusted Python session** to run requests without that dialog for the current panel session.
 

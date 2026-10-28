@@ -1,4 +1,4 @@
-"""Dependency-free MCP stdio server forwarding tools into the active Nuke GUI."""
+"""Dependency-free MCP stdio server: forwards tools into the active Nuke GUI and serves offline compositing knowledge."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ import socket
 import sys
 import tempfile
 
+from nuke_codex_panel.knowledge import library as knowledge
+
 
 SERVER_INFO = {"name": "nuke-codex-panel", "version": "0.1.0.dev0"}
 
@@ -20,7 +22,13 @@ TOOLS = [
         "description": (
             "Execute unrestricted Python inside the active Foundry Nuke GUI on its main "
             "thread. The namespace persists between calls and already contains `nuke`. "
-            "Use this as the primary way to inspect or manipulate Nuke."
+            "Use this as the primary way to inspect or manipulate Nuke. Prefer native nodes "
+            "and knobs over expressions or scripted stand-ins (e.g. Roto for shapes, "
+            "CheckerBoard for checkers). Before building or organizing any node graph, call "
+            "get_compositing_guidance(..., section=\"workflow\") for fundamentals/graph-conventions "
+            "and fundamentals/quality-safeguards; before keying, also fundamentals/keying-conventions "
+            "(even for familiar nodes). For unfamiliar operations call "
+            "search_compositing_knowledge / get_node_reference."
         ),
         "inputSchema": {
             "type": "object",
@@ -56,7 +64,62 @@ TOOLS = [
         },
         "annotations": {"readOnlyHint": True},
     },
+    {
+        "name": "search_compositing_knowledge",
+        "description": (
+            "Search packaged compositing guidance (topics, fundamentals, native-node "
+            "references). Returns compact matches only; fetch details with "
+            "get_compositing_guidance or get_node_reference. Works without Nuke."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string", "maxLength": knowledge.QUERY_CAP},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 8, "default": 3},
+                "kind": {"type": "string", "enum": list(knowledge.SEARCH_KINDS), "default": "all"},
+            },
+        },
+        "annotations": {"readOnlyHint": True},
+    },
+    {
+        "name": "get_compositing_guidance",
+        "description": (
+            "Get one section of a guidance document by ID (overview, a topics/* or "
+            "fundamentals/* ID) with citations. Capped; returns prerequisite IDs, not text."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["topic_id"],
+            "properties": {
+                "topic_id": {"type": "string"},
+                "section": {"type": "string", "enum": list(knowledge.GUIDANCE_SECTIONS), "default": "overview"},
+            },
+        },
+        "annotations": {"readOnlyHint": True},
+    },
+    {
+        "name": "get_node_reference",
+        "description": (
+            "Get one section of a curated native-node reference by node name, ID or alias. "
+            "Static Nuke 17.1 documentation facts; runtime_verified is false, so confirm "
+            "availability in the installed Nuke."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["node"],
+            "properties": {
+                "node": {"type": "string"},
+                "section": {"type": "string", "enum": list(knowledge.NODE_SECTIONS), "default": "overview"},
+            },
+        },
+        "annotations": {"readOnlyHint": True},
+    },
 ]
+
+KNOWLEDGE_TOOLS = frozenset(
+    {"search_compositing_knowledge", "get_compositing_guidance", "get_node_reference"}
+)
 
 
 def _runtime_directory() -> Path:
@@ -119,7 +182,28 @@ def _bridge_call(method: str, params: dict) -> dict:
     return json.loads(chunks.split(b"\n", 1)[0].decode("utf-8"))
 
 
+def _knowledge_result(name: str, arguments: dict) -> dict:
+    handlers = {
+        "search_compositing_knowledge": lambda a: knowledge.search_compositing_knowledge(
+            a.get("query"), a.get("limit", 3), a.get("kind", "all")
+        ),
+        "get_compositing_guidance": lambda a: knowledge.get_compositing_guidance(
+            a.get("topic_id"), a.get("section", "overview")
+        ),
+        "get_node_reference": lambda a: knowledge.get_node_reference(
+            a.get("node"), a.get("section", "overview")
+        ),
+    }
+    try:
+        result = handlers[name](arguments)
+    except (knowledge.KnowledgeError, knowledge.CorpusError) as exc:
+        return {"content": [{"type": "text", "text": str(exc)}], "isError": True}
+    return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}], "isError": False}
+
+
 def _tool_result(name: str, arguments: dict) -> dict:
+    if name in KNOWLEDGE_TOOLS:
+        return _knowledge_result(name, arguments)
     method = {
         "execute_python": "execute_python",
         "get_nuke_context": "get_context",
