@@ -317,6 +317,54 @@ def _spectacle_grab(widget, path: Path) -> bool:
     return not _image_is_blank(image) and bool(image.save(str(path), "PNG"))
 
 
+def _grim_grab(widget, path: Path) -> bool:
+    """Capture Hyprland/Sway (wlroots) compositor pixels via grim."""
+    from PySide6 import QtCore, QtGui, QtWidgets
+
+    executable = shutil.which("grim")
+    app = QtWidgets.QApplication.instance()
+    if not executable or app is None:
+        return False
+    # -g takes the compositor's layout coordinates, which are the same logical
+    # space Qt's mapToGlobal reports, and renders at the output's native
+    # resolution, so HiDPI scaling needs no math here.
+    top_left = widget.mapToGlobal(QtCore.QPoint(0, 0))
+    geometry = "%d,%d %dx%d" % (top_left.x(), top_left.y(), widget.width(), widget.height())
+    # Same reasoning as the Spectacle path: coax Nuke's GL surfaces to present
+    # a fresh frame so the compositor has current pixels to hand over.
+    widget.update()
+    app.processEvents(QtCore.QEventLoop.ProcessEventsFlag.AllEvents, 100)
+    process = QtCore.QProcess()
+    process.setProgram(executable)
+    process.setArguments(["-g", geometry, str(path)])
+    loop = QtCore.QEventLoop()
+    timed_out = {"value": False}
+
+    def timeout():
+        timed_out["value"] = True
+        loop.quit()
+
+    timer = QtCore.QTimer()
+    timer.setSingleShot(True)
+    timer.timeout.connect(timeout)
+    process.finished.connect(loop.quit)
+    process.start()
+    timer.start(12_000)
+    loop.exec()
+    timer.stop()
+    if timed_out["value"] or process.state() != QtCore.QProcess.ProcessState.NotRunning:
+        process.kill()
+        process.waitForFinished(1000)
+        path.unlink(missing_ok=True)
+        return False
+    if process.exitStatus() != QtCore.QProcess.ExitStatus.NormalExit or process.exitCode() != 0:
+        path.unlink(missing_ok=True)
+        return False
+
+    image = QtGui.QImage(str(path))
+    return not image.isNull() and not _image_is_blank(image)
+
+
 def _save_widget(widget, target: str, path: Path) -> bool:
     # Qt screen grabs are intentionally blacked out by KWin under Wayland.
     # Spectacle has compositor permission and captures OpenGL surfaces as shown.
@@ -326,6 +374,16 @@ def _save_widget(widget, target: str, path: Path) -> bool:
         and _spectacle_grab(widget, path)
     ):
         _CAPTURE_BACKENDS[str(path.resolve())] = "KDE compositor (Spectacle)"
+        return True
+
+    # Hyprland/Sway (wlroots) are invisible to Qt grabs for the same reason; grim
+    # reads the compositor directly, like Spectacle does on KDE. It exits 0 with
+    # a blank image only if grim itself is unavailable.
+    if (
+        os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+        and _grim_grab(widget, path)
+    ):
+        _CAPTURE_BACKENDS[str(path.resolve())] = "wlroots compositor (grim)"
         return True
 
     # Capturing the visible screen region is more reliable for Nuke's externally
