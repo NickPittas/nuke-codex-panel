@@ -106,9 +106,15 @@ class NukeBridgeServer(QtCore.QObject):
 
     def _drop_socket(self, socket):
         self.buffers.pop(socket, None)
+        socket.disconnectFromHost()
         socket.deleteLater()
 
     def _read_socket(self, socket):
+        if socket not in self.buffers:
+            # Dropped between queueing and delivery: the C++ object may
+            # already be gone. Touching it raises RuntimeError and, inside
+            # this slot, kills the bridge for every later request.
+            return
         buffer = self.buffers.get(socket, b"") + bytes(socket.readAll())
         while b"\n" in buffer:
             line, buffer = buffer.split(b"\n", 1)
@@ -119,8 +125,12 @@ class NukeBridgeServer(QtCore.QObject):
                 response = self._handle_request(request)
             except Exception as exc:
                 response = {"success": False, "error": "%s: %s" % (type(exc).__name__, exc)}
-            socket.write((json.dumps(response) + "\n").encode("utf-8"))
-            socket.flush()
+            try:
+                socket.write((json.dumps(response) + "\n").encode("utf-8"))
+                socket.flush()
+            except RuntimeError:
+                self._drop_socket(socket)
+                return
         self.buffers[socket] = buffer
 
     def _handle_request(self, request: dict) -> dict:
