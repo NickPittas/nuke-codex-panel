@@ -62,22 +62,17 @@ import nuke_codex_panel.ui.panel_widget as panel_widget  # noqa: E402
 
 
 class FakeBridge(QtCore.QObject):
-    """Stand-in for the Nuke bridge, which needs the real `nuke` module."""
+    """Stand-in for the shared Nuke bridge, which needs the real `nuke` module."""
 
     status_changed = QtCore.Signal(str)
 
-    def __init__(self, approve, parent=None):
-        super().__init__(parent)
+    def __init__(self):
+        super().__init__()
         self.discovery_path = tmp / "bridge-session.json"
 
-    def start(self):
-        return True
 
-    def stop(self):
-        pass
-
-
-panel_widget.NukeBridgeServer = FakeBridge
+shared_bridge = FakeBridge()
+panel_widget.ensure_bridge = lambda: shared_bridge
 from nuke_codex_panel.ui.panel_widget import CodexPanelWidget  # noqa: E402
 
 panel = CodexPanelWidget()

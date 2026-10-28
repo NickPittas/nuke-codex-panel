@@ -8,6 +8,9 @@ import shutil
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
+# Env var the sidecar reads to pin one Nuke session's discovery record.
+BRIDGE_FILE_ENV = "NUKE_CODEX_BRIDGE_FILE"
+
 NUKE_SYSTEM_PROMPT = (
     "You are embedded in Foundry Nuke through the Nuke agent panel. "
     "Treat attached screenshots as current compositing context. Use the Nuke "
@@ -27,14 +30,25 @@ def server_command() -> list[str]:
     return [_sidecar_python(), "-m", "nuke_codex_panel.mcp_server.server"]
 
 
-def server_environment() -> dict[str, str]:
-    # The bridge file is intentionally not pinned here: the sidecar
-    # auto-discovers the newest live Nuke session in the runtime directory.
-    return {"PYTHONPATH": str(PROJECT_ROOT)}
+def server_environment(bridge_path: str | None = None) -> dict[str, str]:
+    """Sidecar env. PYTHONPATH is the code package root, never the project cwd.
+
+    Without ``bridge_path`` the sidecar auto-discovers the newest live Nuke
+    session; with it the sidecar is pinned to that exact discovery record.
+    """
+    env = {"PYTHONPATH": str(PROJECT_ROOT)}
+    if bridge_path:
+        env[BRIDGE_FILE_ENV] = str(bridge_path)
+    return env
 
 
 def merge_agent_mcp_config(agent_dir: Path) -> None:
-    """Add or refresh the nuke server entry in a pi/omp-style agent mcp.json."""
+    """Add or refresh the nuke server entry in a pi/omp-style agent mcp.json.
+
+    The file is the user's persistent global config, so it never carries a
+    per-instance bridge pin; pi/omp sidecars inherit the pin from the agent
+    process environment instead (see ``JsonlProcessClient.launch_environment``).
+    """
     agent_dir.mkdir(parents=True, exist_ok=True)
     path = agent_dir / "mcp.json"
     try:
@@ -50,14 +64,14 @@ def merge_agent_mcp_config(agent_dir: Path) -> None:
     path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 
 
-def write_claude_mcp_config(path: Path) -> Path:
+def write_claude_mcp_config(path: Path, bridge_path: str | None = None) -> Path:
     """Write a Claude Code --mcp-config file with the nuke stdio server."""
     config = {
         "mcpServers": {
             "nuke": {
                 "command": server_command()[0],
                 "args": server_command()[1:],
-                "env": server_environment(),
+                "env": server_environment(bridge_path),
             }
         }
     }
@@ -65,7 +79,7 @@ def write_claude_mcp_config(path: Path) -> Path:
     return path
 
 
-def write_opencode_config(path: Path) -> Path:
+def write_opencode_config(path: Path, bridge_path: str | None = None) -> Path:
     """Write an OPENCODE_CONFIG overlay with the nuke MCP server and open permissions."""
     config = {
         "$schema": "https://opencode.ai/config.json",
@@ -74,8 +88,10 @@ def write_opencode_config(path: Path) -> Path:
             "nuke": {
                 "type": "local",
                 "command": server_command(),
-                "environment": server_environment(),
+                "environment": server_environment(bridge_path),
                 "enabled": True,
+                # Nuke-side approval can take minutes; the default MCP timeout is far shorter.
+                "timeout": 300000,
             }
         },
     }
@@ -83,9 +99,11 @@ def write_opencode_config(path: Path) -> Path:
     return path
 
 
-def runtime_config_dir() -> Path:
+def runtime_config_path(name: str, bridge_path: str | None = None) -> Path:
+    """Per-Nuke-session config file, so pinned configs never clobber each other."""
     from ..bridge.server import runtime_directory
 
     directory = runtime_directory() / "harness-config"
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    return directory
+    prefix = Path(bridge_path).stem if bridge_path else "unpinned"
+    return directory / ("%s-%s" % (prefix, name))

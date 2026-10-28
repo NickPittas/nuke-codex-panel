@@ -87,24 +87,19 @@ def test_model_selection_is_stable_and_not_reapplied_forever(monkeypatch, tmp_pa
     class FakeBridge(QtCore.QObject):
         status_changed = QtCore.Signal(str)
 
-        def __init__(self, approve, parent=None):
-            super().__init__(parent)
+        def __init__(self):
+            super().__init__()
             self.discovery_path = tmp_path / "bridge.json"
 
-        def start(self):
-            return True
-
-        def stop(self):
-            pass
-
+    shared_bridge = FakeBridge()
     monkeypatch.setattr(panel_widget.QtCore, "QSettings", FakeSettings)
-    monkeypatch.setattr(panel_widget, "NukeBridgeServer", FakeBridge)
-    chat_store.chats_root = lambda: tmp_path / "chats"
-    harnesses.HARNESSES[:] = [
-        entry for entry in harnesses.HARNESSES if entry["key"] != "loopy"
-    ]
-    harnesses.HARNESSES.append(
-        {"key": "loopy", "label": "Loopy", "factory": LoopyClient}
+    monkeypatch.setattr(panel_widget, "ensure_bridge", lambda: shared_bridge)
+    monkeypatch.setattr(chat_store, "chats_root", lambda: tmp_path / "chats")
+    monkeypatch.setattr(
+        harnesses,
+        "HARNESSES",
+        [entry for entry in harnesses.HARNESSES if entry["key"] != "loopy"]
+        + [{"key": "loopy", "label": "Loopy", "factory": LoopyClient}],
     )
 
     panel = panel_widget.CodexPanelWidget()

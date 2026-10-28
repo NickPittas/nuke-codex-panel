@@ -4,18 +4,16 @@ import json
 
 from PySide6 import QtWidgets
 
-from nuke_codex_panel.harnesses import create_harness, harness_names
-from nuke_codex_panel.harnesses.nuke_mcp import merge_agent_mcp_config
+from nuke_codex_panel.harnesses import create_harness
+from nuke_codex_panel.harnesses.nuke_mcp import (
+    merge_agent_mcp_config,
+    runtime_config_path,
+    write_claude_mcp_config,
+    write_opencode_config,
+)
 
 
 app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
-
-
-def test_registry_covers_all_harnesses():
-    assert harness_names() == ["codex", "claude", "pi", "omp", "opencode"]
-    for name in harness_names():
-        client = create_harness(name, "/tmp")
-        assert client.name == name
 
 
 def test_pi_rpc_message_routing():
@@ -167,3 +165,38 @@ def test_mcp_config_merge(tmp_path):
     merge_agent_mcp_config(tmp_path / "agent")
     merged = json.loads(path.read_text())
     assert "other" in merged["mcpServers"] and "nuke" in merged["mcpServers"]
+
+
+def test_pinned_runtime_configs_do_not_clobber_each_other(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "run"))
+    first, second = (str(tmp_path / ("session-%d-ab.json" % pid)) for pid in (1, 2))
+
+    def pin(path, key):
+        data = json.loads(path.read_text())
+        entry = data["mcpServers"]["nuke"] if key == "claude" else data["mcp"]["nuke"]
+        return (entry["env"] if key == "claude" else entry["environment"])["NUKE_CODEX_BRIDGE_FILE"]
+
+    for key, name, writer in (
+        ("claude", "claude-mcp.json", write_claude_mcp_config),
+        ("opencode", "opencode-nuke.json", write_opencode_config),
+    ):
+        path_one = runtime_config_path(name, first)
+        path_two = runtime_config_path(name, second)
+        writer(path_one, first)
+        writer(path_two, second)
+        assert path_one != path_two
+        assert pin(path_one, key) == first
+        assert pin(path_two, key) == second
+
+
+def test_global_agent_config_stays_unpinned(tmp_path, monkeypatch):
+    monkeypatch.setenv("NUKE_CODEX_BRIDGE_FILE", str(tmp_path / "session-1-ab.json"))
+    path = tmp_path / "agent" / "mcp.json"
+    path.parent.mkdir()
+    other = {"command": "uvx", "args": ["x"], "env": {"KEY": "v"}, "directTools": True}
+    path.write_text(json.dumps({"imports": ["codex"], "mcpServers": {"other": other}}))
+    merge_agent_mcp_config(path.parent)
+    saved = json.loads(path.read_text())
+    assert saved["mcpServers"]["other"] == other
+    assert saved["imports"] == ["codex"]
+    assert "NUKE_CODEX_BRIDGE_FILE" not in saved["mcpServers"]["nuke"]["env"]

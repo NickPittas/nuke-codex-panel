@@ -13,24 +13,31 @@
 ## Process architecture
 
 ```text
-Nuke
-└── Docked CodexPanelWidget
-    ├── Codex App Server client (JSON-RPC over stdio)
-    ├── capture controls and image history
-    └── in-Nuke bridge (loopback only)
-            ▲
-            │ authenticated localhost RPC
-            ▼
-      nuke-codex-mcp sidecar
-            ▲
+Nuke (GUI process)
+├── nuke_codex_panel.menu import
+│   └── process-wide NukeBridgeServer (loopback only, ensure_bridge())
+│       ├── discovery record, removed on Qt aboutToQuit
+│       └── trust sources: weak references to open panels
+├── Docked CodexPanelWidget(s)  (do not own the bridge)
+│   ├── Codex / Claude / pi / OMP / opencode harnesses (nuke_codex_panel/harnesses/)
+│   ├── capture controls and image history, chat persistence
+│   └── each launches the bundled MCP server via harnesses/nuke_mcp.py, pinned to the shared bridge discovery record
+
+External agents (Codex CLI, OpenCode, Claude, ...)
             │ MCP stdio
             ▼
-      Codex App Server
+   bundled MCP server (python -m nuke_codex_panel.mcp_server.server,
+   or nuke-codex-mcp)
+            │ authenticated localhost RPC
+            ▼
+   the same shared bridge
 ```
 
-The Codex App Server owns conversations, turns, streaming events, authentication, and approvals. It launches the MCP sidecar from its MCP configuration. The sidecar cannot import Nuke, so it forwards Nuke-specific calls to the bridge running inside Nuke. The bridge marshals execution to the Nuke main thread and returns structured tool or image results.
+Panel backends and external agents launch the same bundled MCP server, which cannot import Nuke and forwards calls to the bridge inside Nuke. The bridge marshals execution to the Nuke main thread and returns structured tool or image results. It starts at GUI startup, independent of any pane, and survives pane close.
 
-The bridge publishes a per-process discovery record under `$XDG_RUNTIME_DIR/nuke-codex-panel-UID/` (with a temporary-directory fallback) containing the Nuke PID, loopback TCP endpoint, and a random session capability token. The directory and record are user-only (`0700`/`0600`), and the panel pins its MCP sidecar to that exact record so concurrent Nuke sessions cannot be confused. Stale fallback records are ignored when their PID is no longer alive. Nothing binds to a non-loopback interface.
+The bridge publishes a per-process discovery record named `session-<pid>-<hex>.json` under `$XDG_RUNTIME_DIR/nuke-codex-panel-UID/` (with a temporary-directory fallback) containing the Nuke PID, loopback TCP endpoint, and a random session capability token. The directory and record are user-only (`0700`/`0600`), and sockets tolerate client disconnects. Panel-launched servers are pinned to the exact record via `NUKE_CODEX_BRIDGE_FILE`; external servers select the newest live Nuke unless pinned the same way. Stale fallback records are ignored when their PID is no longer alive. Nothing binds to a non-loopback interface; access is same-OS-user only.
+
+Python approval is a Nuke dialog. A panel's Trusted session skips it only when exactly one live panel is registered, visible, and has it checked; that trust covers every caller of the shared bridge, including external agents. Multiple live panels always prompt, and hiding or closing a pane resets its trust (showing it again starts untrusted). Hiding or closing never stops the shared bridge.
 
 The panel can also add a freshly captured PNG directly to `turn/start` as a Codex App Server `{ "type": "localImage", "path": "..." }` input. During a turn, MCP screenshot tools return image content blocks.
 
@@ -50,7 +57,7 @@ nuke-codex-panel/
 └── tests/
 ```
 
-The later phases add `app_server/`, `bridge/`, `mcp_server/`, `tools/`, and Nuke stubs without changing the startup entrypoint.
+The later phases added `harnesses/` (which replaced the earlier `app_server/` backends), `bridge/`, `mcp_server/`, `tools/`, and Nuke stubs without changing the startup entrypoint.
 
 ## Core tool surface
 

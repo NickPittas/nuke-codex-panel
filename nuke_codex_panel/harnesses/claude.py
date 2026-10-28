@@ -32,7 +32,7 @@ class ClaudeClient(JsonlProcessClient):
         self.model_id: str | None = None
         self.session_id: str | None = None
         self._turn_open = False
-        self._mcp_config_path = nuke_mcp.runtime_config_dir() / "claude-mcp.json"
+        self._mcp_config_path = nuke_mcp.runtime_config_path("claude-mcp.json", bridge_path)
 
     def resolve_program(self) -> str | None:
         return resolve_binary(
@@ -42,7 +42,7 @@ class ClaudeClient(JsonlProcessClient):
         )
 
     def launch_arguments(self) -> list[str]:
-        nuke_mcp.write_claude_mcp_config(self._mcp_config_path)
+        nuke_mcp.write_claude_mcp_config(self._mcp_config_path, self.bridge_path)
         args = [
             "-p",
             "--input-format", "stream-json",

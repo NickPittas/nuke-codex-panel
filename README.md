@@ -36,10 +36,14 @@ Adding another harness later: subclass `HarnessClient` in `nuke_codex_panel/harn
 ## Requirements
 
 - Foundry Nuke 17+ with PySide6.
-- At least one authenticated harness CLI: `codex`, `claude`, `pi`, `omp`, or `opencode`.
+- System Python 3 for the bundled MCP server (this alone is enough for external MCP-only use; no harness CLI needed).
+- For the docked panel: at least one authenticated harness CLI: `codex`, `claude`, `pi`, `omp`, or `opencode`. The Codex CLI install below is one option.
+- The ChatGPT desktop app is optional and is not used by the Nuke panel.
 - KDE Wayland capture currently requires `spectacle`; other desktops use the available Qt/OpenGL fallbacks.
 
-## Codex setup
+The Codex harness launches `codex app-server` locally. Installing only the ChatGPT app does not guarantee that a `codex` executable is available to Nuke.
+
+## Install Codex
 
 Install the CLI using npm:
 
@@ -89,38 +93,36 @@ import nuke_codex_panel.menu
 
 Restart Nuke, then open **Pane > Codex**. To uninstall the bootstrap, remove those two lines and the symlink.
 
-## MCP installation
+## One application, one bundled MCP
 
-### Normal panel use: no manual MCP installation
+This project is a single application containing the dockable panel and the MCP server used by external agents. There is no separate server project, second Nuke plugin, or separate virtual environment.
 
-The panel starts its own authenticated localhost bridge and injects the bundled `nuke` MCP server into its Codex App Server thread automatically. Users should not add another global MCP entry just to use the docked panel.
+- Importing `nuke_codex_panel.menu` in a Nuke GUI session starts one process-wide, authenticated, loopback-only bridge. It starts at Nuke startup whether or not a Codex pane is open, and it stays running when a pane is closed. The pane does not own the bridge.
+- All five harnesses (Codex, Claude, pi, OMP, opencode) launch the same bundled MCP server. The command and environment come from `nuke_codex_panel/harnesses/nuke_mcp.py` (`server_command()`, `server_environment(bridge_path)`), and panel instances are pinned to this Nuke's exact bridge discovery record. The package location, not the active project's working directory, determines `PYTHONPATH`. No global MCP registration is needed for panel-only use, and a panel's bridge pin is not written into persistent global client configuration; external registrations without a pin keep auto-discovering the newest live Nuke.
+- External agents need only a registration pointing at the same bundled stdio server. They do not need a pane open.
 
-The automatic tools are:
+The tools are `execute_python`, `get_nuke_context`, and `capture_nuke_screenshot`.
 
-- `execute_python`
-- `get_nuke_context`
-- `capture_nuke_screenshot`
+### Approval and trust
 
-Open the Codex pane before asking the model to use these tools. Python requests are confirmed inside Nuke unless **Trusted Python session** is enabled.
+Python requests are confirmed in a Nuke dialog, whether or not a pane is open. If no trust applies, every request falls back to this dialog; denial prevents the mutation.
 
-### Optional: expose Nuke to Codex CLI outside the panel
+**Trusted Python session** applies only when exactly one live pane is registered, that pane is visible, and its checkbox is checked. Trust then applies to every caller of the shared bridge, including external agents. With multiple live panes (even if one is hidden), requests always prompt. Hiding or closing the pane resets trust; showing it again starts untrusted. The shared bridge keeps running and stays reachable by external agents without any pane.
 
-To let a separate Codex CLI session control the currently open Nuke panel, register the same stdio MCP sidecar globally:
+### Optional: external agents
+
+An external stdio server needs a registration in the client. It runs as the same OS user as Nuke and finds the bridge through a local discovery record. With several Nuke sessions it selects the newest live one; to pin a specific session, set `NUKE_CODEX_BRIDGE_FILE` to that session's discovery record (under `$XDG_RUNTIME_DIR/nuke-codex-panel-UID/`). A pinned record whose Nuke is gone is an error, not a fallback.
+
+**Codex CLI:**
 
 ```bash
 codex mcp add nuke \
   --env PYTHONPATH="$HOME/.nuke/nuke-codex-panel" \
   -- /usr/bin/python3 -m nuke_codex_panel.mcp_server.server
-```
-
-Verify it with:
-
-```bash
 codex mcp get nuke --json
-codex mcp list
 ```
 
-For equivalent manual configuration, add this to `~/.codex/config.toml`:
+Equivalent `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.nuke]
@@ -134,11 +136,26 @@ tool_timeout_sec = 300
 PYTHONPATH = "/home/USER/.nuke/nuke-codex-panel"
 ```
 
-The longer tool timeout allows time for the in-Nuke Python confirmation dialog. This configuration is optional and does not replace the panel's automatic per-conversation setup. Remove the global entry with `codex mcp remove nuke` if it is no longer needed.
+The longer tool timeout allows time for the Python confirmation dialog. Remove with `codex mcp remove nuke`.
 
-### Other local MCP-compatible LLM clients
+**OpenCode** (native format, `~/.config/opencode/opencode.json`; `command` is one array and variables go under `environment`):
 
-An MCP client running on the same workstation can launch the bundled sidecar with configuration equivalent to:
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "nuke": {
+      "type": "local",
+      "command": ["/usr/bin/python3", "-m", "nuke_codex_panel.mcp_server.server"],
+      "environment": { "PYTHONPATH": "/home/USER/.nuke/nuke-codex-panel" },
+      "timeout": 300000,
+      "enabled": true
+    }
+  }
+}
+```
+
+**Claude and other MCP clients** (generic `mcpServers` stdio shape; exact file and key names vary by client):
 
 ```json
 {
@@ -146,44 +163,56 @@ An MCP client running on the same workstation can launch the bundled sidecar wit
     "nuke": {
       "command": "/usr/bin/python3",
       "args": ["-m", "nuke_codex_panel.mcp_server.server"],
-      "env": {
-        "PYTHONPATH": "/home/USER/.nuke/nuke-codex-panel"
-      }
+      "env": { "PYTHONPATH": "/home/USER/.nuke/nuke-codex-panel" }
     }
   }
 }
 ```
 
-The exact configuration filename and key names vary by client. The requirements are:
+Claude Code can register the same entry for all projects with `claude mcp add --scope user nuke --env PYTHONPATH="$HOME/.nuke/nuke-codex-panel" -- /usr/bin/python3 -m nuke_codex_panel.mcp_server.server` (the default scope is local to the current project).
 
-1. Use a local stdio MCP transport.
-2. Put the project directory on `PYTHONPATH`.
-3. Open **Pane > Codex** in Nuke first so the authenticated bridge is running.
-4. Run the MCP client as the same operating-system user as Nuke.
-5. Support MCP image content if screenshot tool results should reach the model visually.
+Requirements: local stdio transport, project directory on `PYTHONPATH` (no `pip install` needed), same OS user as Nuke, and MCP image-content support if screenshots should reach the model visually. External MCP-only use needs only Nuke (GUI session) and system Python, not the Codex CLI.
 
-The sidecar is not a standalone remote-control daemon. It discovers a live Nuke panel on localhost and cannot control Nuke when the pane is closed. If several Nuke sessions are open, the manually configured sidecar selects the most recently started live bridge; the docked panel avoids this ambiguity by pinning its own exact bridge file.
+### Optional: console entry point
 
-> **Security:** `execute_python` is intentionally unrestricted and can perform any action available to Nuke's Python process, including filesystem and subprocess operations. Keep per-request confirmation enabled unless the current client and conversation are trusted.
+To get a `nuke-codex-mcp` command instead of the module form, install this same project (not a separate server) with uv:
+
+```bash
+uv tool install /absolute/path/to/nuke-codex-panel
+```
+
+Then register `nuke-codex-mcp` as the `command` with no `args` and no `PYTHONPATH`. This is optional; the module form above works without it.
+
+### Migrating from the old `nuke_mcp` plugin
+
+The unified server replaces the separate `nuke_mcp` startup. To migrate, remove (do not delete the old folder itself) these entries:
+
+1. In `~/.nuke/menu.py` (or `init.py`), remove the `import nuke_mcp_addon` line and any `nuke_mcp` `pluginAddPath`.
+2. In each client config, remove the old `nuke_mcp` entry (for OpenCode, the `mcp.nuke_mcp` block pointing at `nuke_mcp/.venv/bin/python` and `nuke_mcp/main.py`; for Codex, `codex mcp remove` any old entry), then add one of the registrations above.
+3. Ensure the panel's two startup lines are present, restart Nuke, and confirm there is a single bridge.
+
+Leave `~/.nuke/nuke_mcp/` on disk; it is simply no longer loaded.
+
+> **Security:** `execute_python` is intentionally unrestricted and can perform any action available to Nuke's Python process, including filesystem and subprocess operations. Keep per-request confirmation enabled unless the caller and conversation are trusted.
 
 ### Instructions for installation agents and LLMs
 
 When installing this project for a user:
 
 1. Do not modify or replace unrelated content in `~/.nuke/init.py` or `~/.nuke/menu.py`.
-2. Ensure the project exists at the path used by `nuke.pluginAddPath`.
-3. Confirm `codex --version` and `codex login status` outside Nuke.
-4. Confirm Nuke can resolve the Codex binary; set `NUKE_CODEX_BIN` when necessary.
-5. Do not globally register the MCP server for ordinary docked-panel use.
-6. Register the stdio MCP entry only when the user explicitly wants an external Codex or other MCP client to control the open Nuke session.
-7. Restart Nuke and verify **Pane > Codex**, connection status, Python approval, and all three capture targets.
+2. Ensure the project exists at the path used by `nuke.pluginAddPath`, with the two startup lines present.
+3. Confirm `codex --version` and `codex login status` outside Nuke; set `NUKE_CODEX_BIN` if Nuke cannot resolve Codex.
+4. Do not globally register the MCP server for panel-only use.
+5. Register the stdio entry only when the user wants an external agent; do not install a second Nuke plugin.
+6. If `nuke_mcp` is present, follow the migration steps; never delete its folder.
+7. Restart Nuke and verify the bridge is reachable without a pane, then **Pane > Codex**, Python approval, and all three capture targets.
 
 ## Current functionality
 
 - Dockable PySide6 panel registration.
-- Live Codex App Server connection using the existing local Codex authentication.
+- Live connection to the selected harness using its existing local authentication.
 - Streaming conversation with cancellation and reconnect controls.
-- Immediate Viewer, Node Graph, and full-interface PNG capture using KDE Spectacle compositor capture on Wayland, with validated Qt/OpenGL/widget fallbacks elsewhere.
+- Immediate Viewer, Node Graph, and full-interface PNG capture using KDE Spectacle on KDE Wayland, `grim` on wlroots compositors (Hyprland/Sway), with validated Qt/OpenGL/widget fallbacks elsewhere.
 - Captured images are attached as `localImage` inputs to the next prompt.
 - Pending images have individual remove buttons and Clear All, and disappear automatically after Send.
 - Captures are stored under `~/.cache/nuke-codex-panel/captures`; the panel does not rely on `/tmp` permissions.
@@ -191,15 +220,26 @@ When installing this project for a user:
 - Python runs on Nuke's Qt main thread in a persistent namespace containing `nuke`, captures output/errors, reports node changes, and uses an undo group by default.
 - Each Python request requires confirmation in Nuke. Enable **Trusted Python session** to run requests without that dialog for the current panel session.
 
-After pulling or editing the integration code, close and reopen the Codex pane (or restart Nuke) so its Codex App Server thread is recreated with the Nuke MCP configuration.
+After pulling or editing the integration code, restart Nuke so the process-wide bridge and the panel's harness processes pick up the new code.
 
 ## Smoke tests
 
+Run from the project root with `NUKE_BIN` set to your Nuke executable (any path; nothing below depends on a specific version):
+
 ```bash
+export NUKE_BIN=/path/to/Nuke17.x
+export PYTHONPATH="$PWD${PYTHONPATH:+:$PYTHONPATH}"
+
+# No model turns
 python3 -m pytest -q
-/opt/Nuke17.0v4/Nuke17.0 -t tests/nuke_smoke.py
-/opt/Nuke17.0v4/Nuke17.0 -t tests/bridge_smoke.py
-/opt/Nuke17.0v4/Nuke17.0 -t tests/app_server_smoke.py
-/opt/Nuke17.0v4/Nuke17.0 -t tests/codex_tool_smoke.py
-/opt/Nuke17.0v4/Nuke17.0 --tg tests/capture_wayland_smoke.py
+"$NUKE_BIN" --safe --tg tests/shared_bridge_smoke.py   # prints NUKE_CODEX_SHARED_BRIDGE_OK on success
+"$NUKE_BIN" --safe -t tests/nuke_smoke.py
+"$NUKE_BIN" --safe -t tests/bridge_smoke.py
+"$NUKE_BIN" --safe --tg tests/capture_wayland_smoke.py
+
+# Optional: these start real model turns and need an authenticated Codex CLI
+"$NUKE_BIN" --safe -t tests/app_server_smoke.py
+"$NUKE_BIN" --safe -t tests/codex_tool_smoke.py
 ```
+
+Verified so far on one workstation (Nuke 17.1, `--safe --tg`): external stdio clients reaching the shared bridge, bridge survival across pane hide/show/close, a denied Python request from a hidden pane creating no node, trust reset on hide and close (showing the same pane stays untrusted), and close/reopen and shutdown checks. No full model conversation through every backend has been verified.

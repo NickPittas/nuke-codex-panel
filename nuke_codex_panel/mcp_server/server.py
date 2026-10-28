@@ -73,7 +73,7 @@ def _process_alive(pid: int) -> bool:
 
 
 def _discover_bridge() -> dict:
-    explicit = os.environ.get("NUKE_BRIDGE_FILE") or os.environ.get("NUKE_CODEX_BRIDGE_FILE")
+    explicit = os.environ.get("NUKE_CODEX_BRIDGE_FILE")
     if explicit:
         path = Path(explicit)
         try:
@@ -92,7 +92,10 @@ def _discover_bridge() -> dict:
                 return record
         except Exception:
             continue
-    raise RuntimeError("No active Nuke Codex bridge was found. Open the Codex pane in Nuke.")
+    raise RuntimeError(
+        "No active Nuke Codex bridge was found. Start Nuke with the Nuke Codex Panel "
+        "integration installed; the bridge starts with Nuke."
+    )
 
 
 def _bridge_call(method: str, params: dict) -> dict:

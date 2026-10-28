@@ -9,6 +9,8 @@ import shutil
 
 from PySide6 import QtCore
 
+from .nuke_mcp import BRIDGE_FILE_ENV
+
 
 def _user_bin_dirs() -> list[str]:
     """Per-user bin dirs a desktop-launched Nuke may be missing from PATH."""
@@ -167,7 +169,7 @@ class JsonlProcessClient(HarnessClient):
         # Pin this client to its own Nuke session's bridge: with several Nuke
         # instances open, "newest discovery file" would target the wrong one.
         if self.bridge_path:
-            return {"NUKE_BRIDGE_FILE": self.bridge_path}
+            return {BRIDGE_FILE_ENV: self.bridge_path}
         return None
 
     def start(self):

@@ -7,7 +7,7 @@ import traceback
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from ..bridge import NukeBridgeServer
+from ..bridge import ensure_bridge, register_trust_source
 from ..capture import capture_backend, capture_target
 from ..chat_store import ChatStore
 from ..harnesses import create_harness, harness_label, harness_names
@@ -31,6 +31,7 @@ class CodexPanelWidget(QtWidgets.QWidget):
     """Native Nuke panel with streaming agent chat and image attachments."""
 
     def __init__(self, parent=None):
+        bridge = ensure_bridge()
         super().__init__(parent)
         self.setObjectName("NukeCodexPanel")
         self.setMinimumWidth(360)
@@ -42,11 +43,13 @@ class CodexPanelWidget(QtWidgets.QWidget):
         self.settings = QtCore.QSettings("nuke-codex-panel", "panel")
         self._models_signature = None
         self._applied_model = None
+        self._closed = False
         self._build_ui()
-        self.bridge = NukeBridgeServer(self._approve_python, self)
-        self.bridge.status_changed.connect(self.status.setText)
-        bridge_ready = self.bridge.start()
-        self.bridge_path = str(self.bridge.discovery_path) if bridge_ready else None
+        self.bridge = bridge
+        self.bridge.status_changed.connect(self._on_bridge_status)
+        self.status.setText("Nuke bridge ready on localhost")
+        self.bridge_path = str(self.bridge.discovery_path)
+        self._unregister_trust = register_trust_source(self.is_python_trusted)
         harness = str(self.settings.value("harness", "codex"))
         if harness not in harness_names():
             # Never brick the panel on a stale or hand-edited setting.
@@ -617,26 +620,29 @@ class CodexPanelWidget(QtWidgets.QWidget):
         self.clear_attachments_button.setEnabled(bool(count))
         self.history.setVisible(bool(count))
 
-    def _approve_python(self, code: str) -> bool:
-        if self.trusted_python.isChecked():
-            return True
-        preview = code if len(code) <= 1200 else code[:1200] + "\n…"
-        dialog = QtWidgets.QMessageBox(self)
-        dialog.setWindowTitle("Agent requests Nuke Python execution")
-        dialog.setIcon(QtWidgets.QMessageBox.Icon.Question)
-        dialog.setText("Run this Python inside the current Nuke session?")
-        dialog.setInformativeText(preview)
-        dialog.setDetailedText(code)
-        dialog.setStandardButtons(
-            QtWidgets.QMessageBox.StandardButton.Yes
-            | QtWidgets.QMessageBox.StandardButton.No
-        )
-        dialog.setDefaultButton(QtWidgets.QMessageBox.StandardButton.No)
-        return dialog.exec() == QtWidgets.QMessageBox.StandardButton.Yes
+    def is_python_trusted(self) -> bool:
+        """Whether this open, visible panel's Trusted Python session is enabled."""
+        return not self._closed and self.isVisible() and self.trusted_python.isChecked()
+
+    def hideEvent(self, event):
+        """Hiding the pane ends Trusted Python; the shared bridge stays up."""
+        self.trusted_python.setChecked(False)
+        super().hideEvent(event)
+
+    def _on_bridge_status(self, text: str):
+        self.status.setText(text)
 
     def closeEvent(self, event):
-        self._save_chat()
-        self.bridge.stop()
-        if self.client is not None:
-            self.client.stop()
+        """Save and stop only this panel's harness; the shared bridge outlives the pane."""
+        if not self._closed:
+            self._closed = True
+            self._unregister_trust()
+            self.trusted_python.setChecked(False)
+            try:
+                self.bridge.status_changed.disconnect(self._on_bridge_status)
+            except (RuntimeError, TypeError):
+                pass
+            self._save_chat()
+            if self.client is not None:
+                self.client.stop()
         super().closeEvent(event)

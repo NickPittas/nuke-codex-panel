@@ -42,7 +42,7 @@ class OpencodeClient(HarnessClient):
         self._sse_buffer = ""
         self._stopping = False
         self._restart_requested = False
-        self._config_path = nuke_mcp.runtime_config_dir() / "opencode-nuke.json"
+        self._config_path = nuke_mcp.runtime_config_path("opencode-nuke.json", bridge_path)
 
     def resolve_program(self) -> str | None:
         from .base import resolve_binary
@@ -65,15 +65,13 @@ class OpencodeClient(HarnessClient):
             return
         self._stopping = False
         self._turn_open = False
-        nuke_mcp.write_opencode_config(self._config_path)
+        nuke_mcp.write_opencode_config(self._config_path, self.bridge_path)
         self.status_changed.emit("Starting opencode server…")
         self.process.setProgram(program)
         self.process.setArguments(["serve", "--port", "0", "--hostname", "127.0.0.1"])
         env = QtCore.QProcessEnvironment.systemEnvironment()
         env.insert("OPENCODE_CONFIG", str(self._config_path))
         env.insert("OPENCODE_DISABLE_TUI", "1")
-        if self.bridge_path:
-            env.insert("NUKE_BRIDGE_FILE", self.bridge_path)
         self.process.setProcessEnvironment(env)
         self.process.setWorkingDirectory(self.cwd)
         self.process.start()

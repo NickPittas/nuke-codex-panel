@@ -80,16 +80,13 @@ class CodexClient(JsonlProcessClient):
         self._start_thread()
 
     def _thread_config(self) -> dict:
-        nuke_env = dict(server_environment())
-        if self.bridge_path:
-            nuke_env["NUKE_CODEX_BRIDGE_FILE"] = self.bridge_path
         config = {
             "mcp_servers": {
                 "nuke": {
                     "command": server_command()[0],
                     "args": server_command()[1:],
                     "cwd": self.cwd,
-                    "env": nuke_env,
+                    "env": server_environment(self.bridge_path),
                     "startup_timeout_sec": 15,
                     "tool_timeout_sec": 300,
                 }
