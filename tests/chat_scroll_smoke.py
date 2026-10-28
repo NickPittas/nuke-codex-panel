@@ -1,6 +1,6 @@
 """Verify the chat view pins smoothly while streaming and never yanks a user who scrolled up."""
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtTest, QtWidgets
 
 from nuke_codex_panel.ui.chat_view import ChatView
 
@@ -24,6 +24,11 @@ chat.start_assistant("Codex")
 def pump(cycles=3):
     for _ in range(cycles):
         app.processEvents()
+    # Real wait: the streaming render runs on a >=60 ms single-shot timer and
+    # processEvents alone returns in microseconds on a fast machine — without
+    # this wait the stream never renders (the test only used to pass because
+    # the old layout storm made every event-loop pass slow).
+    QtTest.QTest.qWait(10)
 
 
 def send_chunk(n):

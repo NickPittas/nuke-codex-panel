@@ -50,6 +50,12 @@ class BubbleText(QtWidgets.QTextBrowser):
         self.setSizePolicy(
             QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Minimum
         )
+        # Last height computed in _fit_height. heightForWidth must be a pure
+        # query: calling document.setTextWidth() there let the layout system's
+        # width queries relayout the document, and documentSizeChanged then
+        # re-invalidated the layout — a self-sustaining loop that pinned
+        # Nuke's main thread at 100% CPU while any chat was streaming.
+        self._fitted_height = max(self.fontMetrics().height(), 20)
         document = self.document()
         document.setDocumentMargin(0)
         document.setDefaultStyleSheet(_DOC_STYLESHEET)
@@ -65,17 +71,22 @@ class BubbleText(QtWidgets.QTextBrowser):
         return True
 
     def heightForWidth(self, width: int) -> int:
-        document = self.document()
-        document.setTextWidth(max(width - 4, 50))
-        return int(document.size().height()) + 6
+        return self._fitted_height
 
     def _schedule_fit(self):
         # Cheap: signals the layout machinery without reading a stale size.
         self.updateGeometry()
 
     def _fit_height(self):
+        # The ONLY place the document width is set, always from the viewport:
+        # one width source means documentSizeChanged settles instead of
+        # oscillating between layout-query widths and viewport widths.
+        document = self.document()
+        width = self.viewport().width() or 300
+        document.setTextWidth(max(width - 4, 50))
+        self._fitted_height = int(document.size().height()) + 6
         self.updateGeometry()
-        self.setMinimumHeight(self.heightForWidth(self.viewport().width() or 300))
+        self.setMinimumHeight(self._fitted_height)
         self.height_changed.emit()
 
     def resizeEvent(self, event):
@@ -162,6 +173,16 @@ class ChatView(QtWidgets.QScrollArea):
         self._render_timer.setSingleShot(True)
         self._render_timer.timeout.connect(self._render_stream)
         self._render_interval = 60
+        # Pin-to-bottom state: armed when the view is at (or forced to) the
+        # bottom BEFORE the content grows, consumed when the scrollbar range
+        # catches up — scrolling to maximum() at height_changed time reads a
+        # stale maximum and leaves the view stranded mid-content.
+        self._pin_pending = False
+        self.verticalScrollBar().rangeChanged.connect(self._on_range_changed)
+
+    def _on_range_changed(self, *_args):
+        if getattr(self, "_pin_pending", False):
+            self._consume_pending_pin(from_range_change=True)
 
     # -- public API ---------------------------------------------------------
 
@@ -427,10 +448,21 @@ class ChatView(QtWidgets.QScrollArea):
         bar = self.verticalScrollBar()
         if not force and bar.value() < bar.maximum() - 40:
             return
-        QtCore.QTimer.singleShot(
-            0,
-            lambda: self.verticalScrollBar().setValue(self.verticalScrollBar().maximum()),
-        )
+        # Arm, don't scroll: the scrollbar maximum is still stale at
+        # height_changed time. _on_range_changed pins when it catches up.
+        self._pin_pending = True
+
+    def _consume_pending_pin(self, from_range_change: bool = False):
+        if not getattr(self, "_pin_pending", False):
+            return
+        bar = self.verticalScrollBar()
+        # Trust the arming check on the range-change path: clamping to the new
+        # range can make a pinned view look mid-content (value « new maximum).
+        if not from_range_change and bar.value() < bar.maximum() - 40:
+            self._pin_pending = False
+            return
+        self._pin_pending = False
+        bar.setValue(bar.maximum())
 
     def _stick_if_pinned(self):
         """A bubble grew: re-pin only if the user was already at the bottom."""
