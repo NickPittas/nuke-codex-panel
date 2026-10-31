@@ -1,88 +1,105 @@
-"""Per-harness binary path overrides with live auto-detection feedback."""
+"""Nuke Pi settings: private runtime status, Pi accounts and chat text size.
+
+The Pi runtime is installed and owned by this plug-in, so there is nothing to locate or configure
+here: the dialog only reports what the plug-in resolves and offers the user-facing preferences.
+"""
 
 from __future__ import annotations
 
 from PySide6 import QtCore, QtWidgets
 
-from ..harnesses import HARNESSES, resolve_harness_binary
+from .theme import FONT_DEFAULT, FONT_MAX, FONT_MIN, apply_theme, set_variant
 
 
-class HarnessSettingsDialog(QtWidgets.QDialog):
-    """Edit the binary path each harness resolves to.
+def runtime_status() -> tuple[bool, str]:
+    """``(ok, text)`` for the plug-in's private Pi runtime; a cheap local check, no process started."""
+    from .. import pi_runtime
 
-    Paths probe automatically (Settings override, env var, PATH, known install
-    dirs); the hint under each row shows what currently resolves.
-    """
+    return pi_runtime.runtime_status()
 
-    def __init__(self, parent=None):
+
+class PiSettingsDialog(QtWidgets.QDialog):
+    """Runtime status, accounts and chat text size for the Nuke Pi panel."""
+
+    # The panel owns the persisted value and the ChatView; the dialog only reports the user's choice.
+    font_size_changed = QtCore.Signal(int)
+
+    def __init__(self, font_size: int = FONT_DEFAULT, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Harness Settings")
-        self.settings = QtCore.QSettings("nuke-codex-panel", "panel")
-        self._hints: dict[str, QtWidgets.QLabel] = {}
-        self._snapshot: dict[str, str] = {}
-
+        self.setWindowTitle("Nuke Pi settings")
+        self.setMinimumWidth(460)
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        runtime_box = QtWidgets.QGroupBox("Pi runtime")
+        runtime_layout = QtWidgets.QVBoxLayout(runtime_box)
         note = QtWidgets.QLabel(
-            "Binaries are found automatically (PATH and common install dirs).\n"
-            "Set an explicit path only when auto-detection fails; it wins over "
-            "everything else. Reconnect applies changes."
+            "Nuke Pi runs the official Pi agent on a private Node that the installer placed "
+            "inside this plug-in. It never uses a global Node, a global Pi or your PATH."
         )
         note.setWordWrap(True)
-        layout.addWidget(note)
+        set_variant(note, "status", "muted")
+        runtime_layout.addWidget(note)
+        self.runtime_label = QtWidgets.QLabel("")
+        self.runtime_label.setWordWrap(True)
+        self.runtime_label.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
+        runtime_layout.addWidget(self.runtime_label)
+        row = QtWidgets.QHBoxLayout()
+        row.addStretch(1)
+        self.recheck_button = QtWidgets.QPushButton("Check again")
+        self.recheck_button.clicked.connect(self._refresh_runtime)
+        row.addWidget(self.recheck_button)
+        runtime_layout.addLayout(row)
+        layout.addWidget(runtime_box)
 
-        box = QtWidgets.QGroupBox("Harness binaries")
-        box_layout = QtWidgets.QVBoxLayout(box)
-        for entry in HARNESSES:
-            key = entry["key"]
-            row = QtWidgets.QWidget()
-            row_layout = QtWidgets.QHBoxLayout(row)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            line = QtWidgets.QLineEdit()
-            line.setText(str(self.settings.value("binary/%s" % key, "") or ""))
-            line.setPlaceholderText("auto-detected")
-            self._snapshot[key] = line.text()
-            browse = QtWidgets.QToolButton()
-            browse.setText("…")
-            browse.setToolTip("Browse for the %s executable" % entry["label"])
-            browse.clicked.connect(lambda _checked=False, k=key, l=line: self._browse(k, l))
-            row_layout.addWidget(QtWidgets.QLabel(entry["label"]))
-            row_layout.addWidget(line, 1)
-            row_layout.addWidget(browse)
-            hint = QtWidgets.QLabel()
-            hint.setObjectName("roleLabel")
-            self._hints[key] = hint
-            box_layout.addWidget(row)
-            box_layout.addWidget(hint)
-            line.textChanged.connect(lambda text, k=key: self._save(k, text))
-            self._refresh_hint(key)
-        layout.addWidget(box)
-
-        buttons = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.StandardButton.Ok
-            | QtWidgets.QDialogButtonBox.StandardButton.Cancel
+        accounts_box = QtWidgets.QGroupBox("Pi accounts")
+        accounts_layout = QtWidgets.QHBoxLayout(accounts_box)
+        accounts_note = QtWidgets.QLabel(
+            "Sign in to model providers with an API key or a subscription. Credentials are kept "
+            "in this plug-in's private account store."
         )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self._cancel)
+        accounts_note.setWordWrap(True)
+        accounts_layout.addWidget(accounts_note, 1)
+        accounts_button = QtWidgets.QPushButton("Pi accounts…")
+        accounts_button.setProperty("variant", "primary")
+        accounts_button.clicked.connect(self._open_accounts)
+        accounts_layout.addWidget(accounts_button)
+        layout.addWidget(accounts_box)
+
+        appearance_box = QtWidgets.QGroupBox("Chat text")
+        appearance_layout = QtWidgets.QHBoxLayout(appearance_box)
+        appearance_layout.addWidget(QtWidgets.QLabel("Text size (pt)"))
+        self.font_spin = QtWidgets.QSpinBox()
+        self.font_spin.setRange(FONT_MIN, FONT_MAX)
+        self.font_spin.setValue(max(FONT_MIN, min(FONT_MAX, int(font_size))))
+        self.font_spin.valueChanged.connect(self.font_size_changed.emit)
+        appearance_layout.addWidget(self.font_spin)
+        reset = QtWidgets.QPushButton("Reset")
+        reset.clicked.connect(lambda: self.font_spin.setValue(FONT_DEFAULT))
+        appearance_layout.addWidget(reset)
+        appearance_layout.addStretch(1)
+        layout.addWidget(appearance_box)
+
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-    def _browse(self, key: str, line: QtWidgets.QLineEdit):
-        path, _filter = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Select the %s executable" % key
-        )
-        if path:
-            line.setText(path)
+        apply_theme(self)
+        self._refresh_runtime()
 
-    def _save(self, key: str, text: str):
-        self.settings.setValue("binary/%s" % key, text.strip())
-        self.settings.sync()
-        self._refresh_hint(key)
+    def set_font_size(self, points: int):
+        """Follow a size change made elsewhere (toolbar) without echoing it back."""
+        if self.font_spin.value() != points:
+            self.font_spin.blockSignals(True)
+            self.font_spin.setValue(points)
+            self.font_spin.blockSignals(False)
 
-    def _refresh_hint(self, key: str):
-        path = resolve_harness_binary(key)
-        self._hints[key].setText("Detected: %s" % path if path else "Not found")
+    def _refresh_runtime(self):
+        ok, text = runtime_status()
+        self.runtime_label.setText(text)
+        set_variant(self.runtime_label, "status", "ok" if ok else "error")
 
-    def _cancel(self):
-        for key, value in self._snapshot.items():
-            self.settings.setValue("binary/%s" % key, value)
-        self.settings.sync()
-        self.reject()
+    def _open_accounts(self):
+        from .accounts_dialog import PiAccountsDialog
+
+        PiAccountsDialog(self).exec()

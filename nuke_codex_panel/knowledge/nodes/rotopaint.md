@@ -15,7 +15,7 @@ source_ids: ["foundry-17.1", "studio-conventions", "lesson-06", "lesson-07"]
 # RotoPaint
 
 ## Purpose
-Source-documented: RotoPaint is vector based, handles rotoscoping, rig removal, garbage matting and dustbusting, and has per-point/global feather, motion blur, blend modes and layer transforms. It has all Roto shape tools plus brush, clone/reveal, blur and dodge/burn. Created with P.
+Source-documented: RotoPaint is vector based, handles rotoscoping, rig removal, garbage matting and dustbusting, and has per-point/global feather, motion blur, blend modes and layer transforms. It has all Roto shape tools plus brush, clone/reveal, blur and dodge/burn. Created with P. Required studio workflow (user policy, not a Foundry fact): with Roto, it is a first source for all shapes, manual or preset (circles, ovals, lines, rectangles, custom paths, motion graphics), drawn with its Ellipse, Rectangle and spline tools. It may hold pure vector shapes alone or alongside paint. No standalone shape nodes or generator/Expression substitutes.
 
 ## Inputs
 bg (background image) and mask (optional image).
@@ -33,5 +33,5 @@ Course practice (lessons 06-07): set each stroke's lifetime to its intended span
 
 ## Sources
 - Foundry Nuke documentation: https://learn.foundry.com/nuke/17.1/content/reference_guide/draw_nodes/rotopaint.html
-- Studio conventions (teacher-supplied, 2026-10-28; project preferences, not universal Nuke facts): splitting paint work.
+- Studio conventions (teacher-supplied, 2026-10-28; updated 2026-10-29; project preferences, not universal Nuke facts): splitting paint work; Roto/RotoPaint-first shape creation.
 - Lesson 06.srt (lesson-06; ASR, teaching-practice only): 00:20:48–00:25:40 persistent patch on stabilized plate; Lesson 07.srt (lesson-07): 00:45:54–00:46:15 one-frame clone fixed by changing lifetime.

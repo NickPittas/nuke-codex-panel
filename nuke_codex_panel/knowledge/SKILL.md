@@ -12,7 +12,7 @@ nodes: []
 version: "Nuke 17.1 documentation; check installed node generation and licence."
 source_ids: ["foundry-17.1", "brinkmann-2e", "studio-conventions"]
 name: "nuke-compositing"
-description: "Use before building or changing a Nuke node graph, to retrieve targeted compositing guidance (keying, roto, color, 3D, tracking, retiming) instead of guessing."
+description: "Use before building or changing a Nuke graph, or before Viewer picking, tracking, roto/paint, warping, calibration, analysis, training or baking; retrieve only the matching workflow."
 ---
 # Nuke compositing knowledge router
 
@@ -37,6 +37,29 @@ Before building, organizing or keying a Nuke graph (even with familiar nodes), l
 - Scaling, rotating, stacked transforms, sharpness: `fundamentals/filtering-concatenation`.
 - Retiming, offsets, motion blur, frame ranges: `fundamentals/time-sampling`.
 - Choosing between nodes, or replacing one with an expression: `fundamentals/node-selection`.
+
+## Route deliberate operations
+Ordinary nodes compute when viewed or rendered; their normal knob edits do not need a special recipe. Fetch `section="workflow"` for the relevant family below before advanced Python. These are static, source-backed recipes; inspect the live generation and verify the resulting keys, values or files.
+
+| Operation | Guidance ID |
+| --- | --- |
+| Viewer input/ROI, RGB or data-pass sampling, picker readback | `topics/viewer-sampling` |
+| Primatte/Ultimatte sampling and Cryptomatte ID selection | `topics/picker-keyers` |
+| DustBust paint points and Denoise profile analysis | `topics/paint-cleanup` |
+| Write/render ranges, caches and specialised output/export buttons | `topics/output-execution` |
+| Tracker4 point placement, table animation, track and export | `topics/tracker-python` |
+| Roto/RotoPaint shapes, tangents, strokes and lifetime | `topics/roto-python` |
+| SplineWarp correspondences, GridWarp and planar tracking | `topics/warp-operations` |
+| CurveTool analysis, MatchGrade, BlinkScript, SmartVector output | `topics/analysis-python` |
+| LensDistortion detection, solve and STMap | `topics/lens-calibration` |
+| PointsTo3D triangulation, Reconcile3D projection bake | `topics/projection-bake` |
+| CameraTracker solve/export, point-cloud and geometry selection/bake | `topics/camera-geometry-operations` |
+| CopyCat/BigCat training and CatFileCreator export | `topics/ml-training` |
+| CaraVR rig solve, stitch and spherical tracking | `topics/plugin-analysis-caravr` |
+| Ocula stereo solve and match correction | `topics/plugin-analysis-stereo` |
+| Furnace analysis and wire-removal tracking | `topics/plugin-analysis-restoration` |
+
+The complete reference-page classification and ordinary-node exclusions are in `docs/NUKE-NODE-OPERATIONS.md` in the source checkout; it is an audit, not material to load for every task.
 
 ## Verify
 Each task you route has reached a document, or you recorded that search returned nothing relevant.

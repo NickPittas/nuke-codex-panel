@@ -1,0 +1,8 @@
+Repository: https://github.com/earendil-works/pi
+Tag: v1.4.0
+Commit: 4a080252f06caf63a525d7873c5d94d3c23887e0 (tag v1.4.0, from the GitHub refs API)
+Retrieved from: https://raw.githubusercontent.com/earendil-works/pi/v1.4.0/LICENSE
+Copyright holder line: Copyright (c) 2025 Mario Zechner
+License: MIT
+Applies to npm packages (all 1.4.0): @earendil-works/pi-agent-core, pi-ai, pi-codemode, pi-coding-agent, pi-mcp, pi-telemetry, pi-tui
+Note: packages/*/LICENSE does not exist at this tag; the repository-root LICENSE is the only upstream license text. File stored unmodified.

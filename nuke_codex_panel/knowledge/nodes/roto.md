@@ -15,7 +15,7 @@ source_ids: ["foundry-17.1", "studio-conventions"]
 # Roto
 
 ## Purpose
-Source-documented: Roto is for rotoscoping only and edits Bezier and B-spline shapes. Create shapes with the Viewer tools, including shape tools such as Ellipse and Rectangle, then edit them in the control panel. Created with O. For a circular matte, draw an Ellipse in Roto rather than generating one with Expression math.
+Source-documented: Roto is for rotoscoping only and edits Bezier and B-spline shapes. Create shapes with the Viewer tools, including shape tools such as Ellipse and Rectangle, then edit them in the control panel. Created with O. Required studio workflow (user policy, not a Foundry fact): Roto/RotoPaint is the main source for ALL shapes, manual or preset: circles, ovals, lines, rectangles, custom paths, motion-graphics shapes. Draw them with the node's own Ellipse, Rectangle and spline tools; do not invent standalone Circle/Ellipse/Line nodes or default to generators or Expression math.
 
 ## Inputs
 bg (optional background; adding it gives Roto an input image and format) and mask (optional image). Roto without bg uses its format knob.
@@ -32,4 +32,4 @@ Studio preference: key at meaningful poses and occlusion changes and inspect int
 
 ## Sources
 - Foundry Nuke documentation: https://learn.foundry.com/nuke/17.1/content/reference_guide/draw_nodes/roto.html
-- Studio conventions (teacher-supplied, 2026-10-28; project preferences, not universal Nuke facts): keyframe placement.
+- Studio conventions (teacher-supplied, 2026-10-28; updated 2026-10-29; project preferences, not universal Nuke facts): keyframe placement; Roto/RotoPaint as the first choice for all shape creation.

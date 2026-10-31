@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "comment": "License texts for locked npm packages whose published tarballs ship no (or not the project's own) license file. Paths are relative to the project root. Texts are stored verbatim from upstream and never invented; packages with no obtainable text are listed under 'unresolved' and reported by the installer.",
+  "supplements": [
+    {
+      "packages": [
+        "@earendil-works/pi-agent-core",
+        "@earendil-works/pi-ai",
+        "@earendil-works/pi-codemode",
+        "@earendil-works/pi-coding-agent",
+        "@earendil-works/pi-mcp",
+        "@earendil-works/pi-telemetry",
+        "@earendil-works/pi-tui"
+      ],
+      "license": "MIT",
+      "source": "https://github.com/earendil-works/pi at tag v1.4.0 (commit 4a080252f06caf63a525d7873c5d94d3c23887e0), repository-root LICENSE; no per-package LICENSE exists upstream",
+      "files": [
+        {
+          "path": "runtime/pi/upstream-licenses/earendil-works-pi/LICENSE",
+          "name": "LICENSE"
+        },
+        {
+          "path": "runtime/pi/upstream-licenses/earendil-works-pi/SOURCE.txt",
+          "name": "LICENSE-SOURCE.txt"
+        }
+      ]
+    },
+    {
+      "packages": [
+        "@aws-sdk/credential-provider-http",
+        "@aws-sdk/credential-provider-login",
+        "@aws-sdk/nested-clients"
+      ],
+      "license": "Apache-2.0",
+      "source": "https://github.com/aws/aws-sdk-js-v3 repository-root LICENSE (Apache License 2.0)",
+      "files": [
+        {
+          "path": "licenses/aws-sdk-js-v3-LICENSE",
+          "name": "LICENSE"
+        }
+      ]
+    },
+    {
+      "packages": [
+        "standardwebhooks"
+      ],
+      "license": "MIT",
+      "source": "https://github.com/standard-webhooks/standard-webhooks/blob/b4d2c14fc5b4ccff3ff271e3b087dff812254c59/libraries/LICENSE (release gitHead of 1.1.1; Copyright (c) 2023 Svix); the published tarball ships no license file",
+      "files": [
+        {
+          "path": "licenses/standardwebhooks-libraries-LICENSE",
+          "name": "LICENSE"
+        }
+      ]
+    }
+  ],
+  "unresolved": [
+    {
+      "package": "data-uri-to-buffer",
+      "note": "The author's MIT declaration in package.json is the only license statement published: neither the tarball, the repository at the release gitHead (85cd8c854aefbf1bb636789d80364cfac8ea1583) nor the source carries a license text or copyright header. No text or copyright line is invented; package.json and README are preserved as evidence."
+    },
+    {
+      "package": "proxy-agent-negotiate",
+      "note": "The author's MIT declaration in package.json is the only license statement published: neither the tarball, the TooTallNate/proxy-agents repository (packages/negotiate) nor the source carries a license text or copyright header. No text or copyright line is invented; package.json is preserved as evidence."
+    }
+  ]
+}

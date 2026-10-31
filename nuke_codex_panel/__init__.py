@@ -1,4 +1,4 @@
-"""Dockable Codex client for Foundry Nuke."""
+"""Nuke Pi: dockable Pi agent panel for Foundry Nuke."""
 
 __version__ = "0.1.0.dev0"
 

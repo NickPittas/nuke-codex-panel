@@ -11,4 +11,4 @@ if nuke.GUI:
     try:
         ensure_bridge()
     except Exception as exc:
-        print("Nuke Codex Panel: bridge unavailable: %s" % exc)
+        print("Nuke Pi: bridge unavailable: %s" % exc)

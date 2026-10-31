@@ -1,7 +1,7 @@
 """Nuke panel registration."""
 
 PANEL_ID = "com.nukecodex.panel"
-PANEL_TITLE = "Codex"
+PANEL_TITLE = "Nuke Pi"
 WIDGET_PATH = (
     "__import__('nuke_codex_panel.ui.panel_widget', "
     "fromlist=['CodexPanelWidget']).CodexPanelWidget"

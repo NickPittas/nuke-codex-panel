@@ -1,0 +1,70 @@
+{
+  "schema": 2,
+  "node": {
+    "version": "26.12.0",
+    "install_dir": "node",
+    "checksums_url": "https://nodejs.org/dist/v26.12.0/SHASUMS256.txt",
+    "platforms": {
+      "linux-x64": {
+        "archive_url": "https://nodejs.org/dist/v26.12.0/node-v26.12.0-linux-x64.tar.gz",
+        "archive_sha256": "d9f88af72ad34f7ddf8e67289829f1698f54b6254f7d4f54b7453117ff1a3d2c",
+        "archive_format": "tar.gz",
+        "archive_root": "node-v26.12.0-linux-x64",
+        "executable": "bin/node",
+        "npm_cli": "lib/node_modules/npm/bin/npm-cli.js",
+        "binary_sha256": "caa24debe02770c92a70677e2a62ca98890150e7ac1c17bcfe31bcc98cc89943"
+      },
+      "win-x64": {
+        "archive_url": "https://nodejs.org/dist/v26.12.0/node-v26.12.0-win-x64.zip",
+        "archive_sha256": "50efaf01a08c520b4bbe499c09a8c5a5c370002c419c0d9da2c6815d3066a453",
+        "archive_format": "zip",
+        "archive_root": "node-v26.12.0-win-x64",
+        "executable": "node.exe",
+        "npm_cli": "node_modules/npm/bin/npm-cli.js"
+      },
+      "darwin-x64": {
+        "archive_url": "https://nodejs.org/dist/v26.12.0/node-v26.12.0-darwin-x64.tar.gz",
+        "archive_sha256": "878ecede191c7abc1bff01d3fb81f7ed81aa1161040dba18776b8ff8593614b1",
+        "archive_format": "tar.gz",
+        "archive_root": "node-v26.12.0-darwin-x64",
+        "executable": "bin/node",
+        "npm_cli": "lib/node_modules/npm/bin/npm-cli.js"
+      },
+      "darwin-arm64": {
+        "archive_url": "https://nodejs.org/dist/v26.12.0/node-v26.12.0-darwin-arm64.tar.gz",
+        "archive_sha256": "2a154d4a5458930e0a2d6a1ecf64eddf5a2b3e1c13636b609c2ecb042e8c4553",
+        "archive_format": "tar.gz",
+        "archive_root": "node-v26.12.0-darwin-arm64",
+        "executable": "bin/node",
+        "npm_cli": "lib/node_modules/npm/bin/npm-cli.js"
+      }
+    }
+  },
+  "pi": {
+    "package": "@earendil-works/pi-coding-agent",
+    "version": "1.4.0",
+    "registry": "https://registry.npmjs.org/",
+    "tarball_integrity": "sha512-Z41LpZ3yYHSC/UUps6Mr39UMFPwH8elhJBG9DY1P7kuzsE5qSK/6eMj2EHzO5evJRQWLbKSqUMw+4nCNtIyiQg==",
+    "rpc_entry": "node_modules/@earendil-works/pi-coding-agent/dist/bundle/rpc-entry.js",
+    "cli_entry": "node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js",
+    "package_json_sha256": "12f5745f99e8991663d41f4b50f9498c25521937bb24dec24ee6be22c8be2462",
+    "package_lock_sha256": "9c7f60dfc23ca2871c68237813e872ebfe915d48349ffd9a72a9a57d713108c3"
+  },
+  "credential_env": {
+    "file": "credential-env.json",
+    "sha256": "c956026c788eb2294eb238d55dd178ed67b09b44619d321e9bd11d120440ad3c",
+    "generator": "generate-credential-env.mjs"
+  },
+  "notices": {
+    "dir": "third-party-notices",
+    "allowed_licenses": [
+      "0BSD",
+      "Apache-2.0",
+      "BSD-3-Clause",
+      "BlueOak-1.0.0",
+      "ISC",
+      "MIT",
+      "Unlicense"
+    ]
+  }
+}

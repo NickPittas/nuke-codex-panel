@@ -19,7 +19,7 @@
     "title": "Teacher-supplied Nuke production conventions",
     "type": "user-conventions",
     "provided": "2026-10-28",
-    "scope": "Project and studio preferences supplied by the user in conversation. They are working policy, not universal Nuke facts and not Foundry requirements. No public URL exists. Foundry behaviour is cited separately from foundry-17.1."
+    "scope": "Project and studio preferences supplied by the user in conversation (provided 2026-10-28; extended 2026-10-29 with the required rule that all shape creation starts in Roto/RotoPaint, including built-in/preset shapes). They are working policy, not universal Nuke facts and not Foundry requirements. No public URL exists. Foundry behaviour is cited separately from foundry-17.1."
   },
   "lesson-01": {
     "title": "Teacher lesson 01 transcript",

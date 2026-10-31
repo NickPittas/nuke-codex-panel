@@ -1,0 +1,10 @@
+include LICENSE README.md THIRD_PARTY_NOTICES.md install.py pyproject.toml
+include docs/INSTALLATION.md docs/USAGE.md
+graft licenses
+recursive-include runtime/pi *.json *.mjs *.ts *.md
+graft runtime/pi/upstream-licenses
+prune runtime/pi/node
+prune runtime/pi/node_modules
+prune runtime/pi/third-party-notices
+exclude runtime/pi/install-state.json
+global-exclude __pycache__ *.py[cod] .DS_Store

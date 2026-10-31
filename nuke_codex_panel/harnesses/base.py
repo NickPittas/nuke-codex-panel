@@ -3,41 +3,13 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
-import shutil
 
 from PySide6 import QtCore
 
+from .intervention import new_control_id
+from ..process_ownership import CONTROL_ID_ENV
 from .nuke_mcp import BRIDGE_FILE_ENV
-
-
-def _user_bin_dirs() -> list[str]:
-    """Per-user bin dirs a desktop-launched Nuke may be missing from PATH."""
-    home = Path.home()
-    return [
-        str(path)
-        for path in (
-            home / ".local" / "share" / "mise" / "shims",
-            home / ".npm-global" / "bin",
-            home / ".local" / "bin",
-            home / ".bin",
-        )
-        if path.is_dir()
-    ]
-
-
-def resolve_binary(env_var: str, name: str, extra_paths: list[str] | None = None) -> str | None:
-    """Resolve a harness binary without assuming the desktop-launched Nuke PATH.
-
-    Precedence: Settings dialog override, env var, PATH, per-user bin dirs,
-    then harness-specific known install dirs.
-    """
-    override = QtCore.QSettings("nuke-codex-panel", "panel").value("binary/%s" % name, "")
-    candidates = [str(override) if override else None, os.environ.get(env_var), shutil.which(name)]
-    candidates.extend(os.path.join(directory, name) for directory in _user_bin_dirs())
-    candidates.extend(extra_paths or [])
-    return next((path for path in candidates if path and Path(path).is_file()), None)
 
 
 def compact_summary(value, limit: int = 120) -> str:
@@ -57,6 +29,8 @@ class HarnessClient(QtCore.QObject):
     name = "base"
     label = "Base"
     env_var = ""
+    # True for clients that implement safe manual interrupt-and-resume.
+    supports_steering = False
 
     status_changed = QtCore.Signal(str)
     ready_changed = QtCore.Signal(bool)
@@ -72,13 +46,22 @@ class HarnessClient(QtCore.QObject):
     turn_completed = QtCore.Signal(str)
     # [{"id": "provider/model", "label": "Pretty name", "efforts": ["low", ...]}]
     models_changed = QtCore.Signal(list)
+    # Manual-steering lifecycle: see ``intervention.SteeringController.snapshot`` for the payload.
+    intervention_changed = QtCore.Signal(dict)
+    # Observational run state (see ``intervention.ActivityTracker.snapshot``); fires on state changes.
+    activity_changed = QtCore.Signal(dict)
+    # Messages that were never delivered and are handed back: [{"id", "text", "image_paths", ...}]
+    guidance_withdrawn = QtCore.Signal(list)
 
     def __init__(self, cwd: str, parent=None, bridge_path: str | None = None):
         super().__init__(parent)
         self.cwd = str(Path(cwd).resolve())
         self.bridge_path = bridge_path
+        # Stable identity of this client for the bridge's execution control; exported to the
+        # harness process (and thereby its MCP sidecar) as NUKE_CODEX_CONTROL_ID.
+        self.control_id = new_control_id()
         self.ready = False
-        # Where harness session files live for this project (pi/omp use it).
+        # Where the agent's session files live for this project.
         self.session_dir = None
         # True while the session was restored from a previous conversation; the
         # harness then tells the model not to continue pre-restore work.
@@ -98,6 +81,24 @@ class HarnessClient(QtCore.QObject):
 
     def interrupt(self):
         pass
+
+    @property
+    def busy(self) -> bool:
+        """Whether a run (or a steering step) is in progress; only steering harnesses track it."""
+        return False
+
+    def intervene(self, text: str, image_paths: list[str] | None = None) -> int | None:
+        """Explicit manual steering (``/btw``); returns the message id, None when unsupported/refused."""
+        return None
+
+    def intervention_state(self) -> dict:
+        return {"phase": "idle", "messages": []}
+
+    def pending_guidance(self) -> list[dict]:
+        return []
+
+    def activity_snapshot(self) -> dict:
+        return {"state": "idle", "tools": [], "nuke_operations": []}
 
     def session_state(self) -> dict:
         """Handle that lets a later run resume the same model-side session."""
@@ -156,8 +157,14 @@ class JsonlProcessClient(HarnessClient):
         self._stderr_tail = ""
         self._next_id = 1
         self._callbacks = {}
+        self._error_callbacks = {}
         self._stopping = False
         self._restart_requested = False
+        # Single owned escalation timer for stop(); cancelled when the process finishes.
+        self._kill_timer = QtCore.QTimer(self)
+        self._kill_timer.setSingleShot(True)
+        self._kill_timer.setInterval(1000)
+        self._kill_timer.timeout.connect(self._kill_if_still_running)
 
     def resolve_program(self) -> str | None:
         raise NotImplementedError
@@ -166,19 +173,25 @@ class JsonlProcessClient(HarnessClient):
         raise NotImplementedError
 
     def launch_environment(self) -> dict[str, str] | None:
+        # The control id lets the bridge pause/revoke exactly this client's tool requests.
+        env = {CONTROL_ID_ENV: self.control_id}
         # Pin this client to its own Nuke session's bridge: with several Nuke
         # instances open, "newest discovery file" would target the wrong one.
         if self.bridge_path:
-            return {BRIDGE_FILE_ENV: self.bridge_path}
-        return None
+            env[BRIDGE_FILE_ENV] = self.bridge_path
+        return env
+
+    def environment_removals(self, names: list[str]) -> list[str]:
+        """Names, among the inherited environment ``names``, to drop from the child process."""
+        return []
 
     def start(self):
         if self.process.state() != QtCore.QProcess.ProcessState.NotRunning:
             return
+        self._kill_timer.stop()
         program = self.resolve_program()
         if not program:
-            hint = " Set %s to its full path." % self.env_var if self.env_var else ""
-            self._fail("%s executable not found on PATH.%s" % (self.binary_label, hint))
+            self._fail("%s not found; run the installer or Reconnect." % self.binary_label)
             return
         self._stopping = False
         self.status_changed.emit("Starting %s…" % self.label)
@@ -187,6 +200,8 @@ class JsonlProcessClient(HarnessClient):
         env = self.launch_environment()
         if env is not None:
             process_env = QtCore.QProcessEnvironment.systemEnvironment()
+            for name in self.environment_removals(process_env.keys()):
+                process_env.remove(name)
             for key, value in env.items():
                 process_env.insert(key, value)
             self.process.setProcessEnvironment(process_env)
@@ -198,23 +213,28 @@ class JsonlProcessClient(HarnessClient):
         self._restart_requested = restart
         self._set_ready(False)
         if self.process.state() == QtCore.QProcess.ProcessState.NotRunning:
+            self._kill_timer.stop()
             if restart:
                 self._stopping = False
                 self._restart_requested = False
                 QtCore.QTimer.singleShot(0, self.start)
             return
+        # Armed before terminate(): a synchronous finished() cancels it.
+        self._kill_timer.start()
         self.process.terminate()
-        QtCore.QTimer.singleShot(1000, self._kill_if_still_running)
 
     def _kill_if_still_running(self):
         if self.process.state() != QtCore.QProcess.ProcessState.NotRunning:
             self.process.kill()
 
-    def _send(self, message: dict, callback=None):
+    def _send(self, message: dict, callback=None, error_callback=None):
+        """Write a request; ``error_callback(error_text, message)`` replaces the generic error report."""
         request_id = self._next_id
         self._next_id += 1
         message["id"] = request_id
         self._callbacks[request_id] = callback
+        if error_callback is not None:
+            self._error_callbacks[request_id] = error_callback
         self._write(message)
         return request_id
 
@@ -246,9 +266,13 @@ class JsonlProcessClient(HarnessClient):
         if request_id not in self._callbacks:
             return False
         callback = self._callbacks.pop(request_id)
+        error_callback = self._error_callbacks.pop(request_id, None)
         if error_text:
-            self.status_changed.emit("%s request failed: %s" % (self.label, error_text))
-            self.error.emit(error_text)
+            if error_callback is not None:
+                error_callback(error_text, message)
+            else:
+                self.status_changed.emit("%s request failed: %s" % (self.label, error_text))
+                self.error.emit(error_text)
         elif callback is not None:
             callback(message)
         return True
@@ -277,8 +301,12 @@ class JsonlProcessClient(HarnessClient):
         self._fail("%s process error: %s%s" % (self.label, error, suffix))
 
     def _on_finished(self, exit_code, _status):
+        # The stopped process is gone: its pending SIGKILL must never reach a replacement.
+        self._kill_timer.stop()
         self._set_ready(False)
         self._callbacks.clear()
+        self._error_callbacks.clear()
+        self._stdout_buffer = ""
         if self._stopping:
             restart = self._restart_requested
             self._stopping = False
